@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERP Controle de Estoque - Fornecedores</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+
+<body data-page="fornecedores">
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-card">
+            <h1>🔐 Login do Sistema</h1>
+            <p>Acesse o ERP para continuar.</p>
+
+            <form id="loginForm" class="form-grid">
+                <div class="form-group full-width">
+                    <label for="loginUsuario">Usuário</label>
+                    <input type="text" id="loginUsuario" placeholder="Digite seu usuário" required>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="loginSenha">Senha</label>
+                    <input type="password" id="loginSenha" placeholder="Digite sua senha" required>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Entrar</button>
+                </div>
+            </form>
+
+            <div class="login-hint">
+                Usuários de teste: <strong>admin / 123</strong> e <strong>joao / 1234</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div>
+                <h2>📦 ERP Estoque</h2>
+                <div class="sidebar-subtitle">Sistema de Controle</div>
+            </div>
+
+            <nav>
+                <ul>
+                    <li><a href="index.html">📊 Dashboard</a></li>
+                    <li><a href="produtos.html">📦 Produtos</a></li>
+                    <li><a href="fornecedores.html" class="active">🏢 Fornecedores</a></li>
+                    <li><a href="entradas.html">⬆ Entradas</a></li>
+                    <li><a href="saidas.html">⬇ Saídas</a></li>
+                    <li><a href="relatorios.html">📑 Relatórios</a></li>
+                </ul>
+            </nav>
+
+            <div class="sidebar-bottom">
+                <div class="user-panel">
+                    <strong id="sidebarUser">👤 Usuário</strong>
+                    <span>Administrador</span>
+                </div>
+                <button class="btn btn-secondary btn-full" id="themeToggle">🌙 Alternar tema</button>
+                <button class="btn btn-danger btn-full" id="logoutBtn">🚪 Sair</button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="topbar-system">
+                <div class="topbar-left">
+                    <h2>ERP Controle de Estoque</h2>
+                    <p>Gerencie os fornecedores cadastrados no sistema</p>
+                </div>
+
+                <div class="topbar-right">
+                    <span>📅 <span id="dataAtual"></span></span>
+                    <span>🔔 Fornecedores</span>
+                    <span id="topbarUser">👤 Usuário</span>
+                </div>
+            </div>
+
+            <header class="topbar">
+                <h1>Cadastro de Fornecedores</h1>
+                <p>Cadastre, edite e consulte os fornecedores do ERP.</p>
+            </header>
+
+            <section class="card">
+                <h2>Novo Fornecedor</h2>
+
+                <form id="formFornecedor" class="form-grid">
+                    <input type="hidden" id="fornecedorEditId">
+
+                    <div class="form-group">
+                        <label for="nomeFornecedor">Nome da Empresa</label>
+                        <input type="text" id="nomeFornecedor" placeholder="Ex: Tech Distribuidora" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="cnpjFornecedor">CNPJ</label>
+                        <input type="text" id="cnpjFornecedor" placeholder="00.000.000/0000-00">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="telefoneFornecedor">Telefone</label>
+                        <input type="text" id="telefoneFornecedor" placeholder="(00) 00000-0000">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="emailFornecedor">E-mail</label>
+                        <input type="email" id="emailFornecedor" placeholder="contato@empresa.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="responsavelFornecedor">Responsável</label>
+                        <input type="text" id="responsavelFornecedor" placeholder="Nome do responsável">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="cidadeFornecedor">Cidade</label>
+                        <input type="text" id="cidadeFornecedor" placeholder="Cidade">
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="enderecoFornecedor">Endereço</label>
+                        <input type="text" id="enderecoFornecedor" placeholder="Rua, número e bairro">
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary" id="btnSalvarFornecedor">Salvar
+                            Fornecedor</button>
+                        <button type="reset" class="btn btn-secondary" id="btnLimparFornecedor">Limpar</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="card">
+                <div class="section-header">
+                    <h2>Lista de Fornecedores</h2>
+
+                    <div class="filters">
+                        <input type="text" id="buscarFornecedor"
+                            placeholder="Buscar fornecedor por nome, CNPJ ou responsável...">
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Empresa</th>
+                                <th>CNPJ</th>
+                                <th>Telefone</th>
+                                <th>E-mail</th>
+                                <th>Responsável</th>
+                                <th>Cidade</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaFornecedores"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="../js/app.js"></script>
+    <script src="../js/fornecedores.js"></script>
+</body>
+
+</html>

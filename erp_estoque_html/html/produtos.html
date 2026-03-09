@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERP Controle de Estoque - Produtos</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+
+<body data-page="produtos">
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-card">
+            <h1>🔐 Login do Sistema</h1>
+            <p>Acesse o ERP para continuar.</p>
+            <form id="loginForm" class="form-grid">
+                <div class="form-group full-width">
+                    <label for="loginUsuario">Usuário</label>
+                    <input type="text" id="loginUsuario" required>
+                </div>
+                <div class="form-group full-width">
+                    <label for="loginSenha">Senha</label>
+                    <input type="password" id="loginSenha" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Entrar</button>
+                </div>
+            </form>
+            <div class="login-hint">Usuários de teste: <strong>admin / 123</strong> e <strong>joao / 1234</strong></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div>
+                <h2>📦 ERP Estoque</h2>
+                <div class="sidebar-subtitle">Sistema de Controle</div>
+            </div>
+
+            <nav>
+                <ul>
+                    <li><a href="index.html">📊 Dashboard</a></li>
+                    <li><a href="produtos.html" class="active">📦 Produtos</a></li>
+                    <li><a href="fornecedores.html">🏢 Fornecedores</a></li>
+                    <li><a href="entradas.html">⬆ Entradas</a></li>
+                    <li><a href="saidas.html">⬇ Saídas</a></li>
+                    <li><a href="relatorios.html">📑 Relatórios</a></li>
+                </ul>
+            </nav>
+
+            <div class="sidebar-bottom">
+                <div class="user-panel">
+                    <strong id="sidebarUser">👤 Usuário</strong>
+                    <span>Administrador</span>
+                </div>
+                <button class="btn btn-secondary btn-full" id="themeToggle">🌙 Alternar tema</button>
+                <button class="btn btn-danger btn-full" id="logoutBtn">🚪 Sair</button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="topbar-system">
+                <div class="topbar-left">
+                    <h2>ERP Controle de Estoque</h2>
+                    <p>Gerencie os produtos do sistema</p>
+                </div>
+                <div class="topbar-right">
+                    <span>📅 <span id="dataAtual"></span></span>
+                    <span>🔔 Produtos</span>
+                    <span id="topbarUser">👤 Usuário</span>
+                </div>
+            </div>
+
+            <header class="topbar">
+                <h1>Cadastro de Produtos</h1>
+                <p>Cadastre, edite, pesquise e acompanhe o status do estoque.</p>
+            </header>
+
+            <section class="card">
+                <h2>Novo Produto</h2>
+
+                <form id="formProduto" class="form-grid">
+                    <input type="hidden" id="produtoEditId">
+
+                    <div class="form-group">
+                        <label for="codigo">Código</label>
+                        <input type="text" id="codigo" placeholder="Ex: 001" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="nome">Nome do Produto</label>
+                        <input type="text" id="nome" placeholder="Ex: Teclado Gamer" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="categoria">Categoria</label>
+                        <input type="text" id="categoria" placeholder="Ex: Informática" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="quantidade">Quantidade</label>
+                        <input type="number" id="quantidade" min="0" placeholder="0" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="preco">Preço</label>
+                        <input type="number" id="preco" min="0" step="0.01" placeholder="0.00" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="fornecedor">Fornecedor</label>
+                        <select id="fornecedor"></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="estoqueMinimo">Estoque mínimo</label>
+                        <input type="number" id="estoqueMinimo" min="0" value="5" required>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary" id="btnSalvarProduto">Salvar Produto</button>
+                        <button type="reset" class="btn btn-secondary" id="btnLimparProduto">Limpar</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="card">
+                <div class="section-header">
+                    <h2>Lista de Produtos</h2>
+
+                    <div class="filters">
+                        <input type="text" id="buscarProduto" placeholder="Buscar por nome ou código...">
+                        <select id="filtroCategoria">
+                            <option value="">Todas as categorias</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Nome</th>
+                                <th>Categoria</th>
+                                <th>Quantidade</th>
+                                <th>Preço</th>
+                                <th>Fornecedor</th>
+                                <th>Status</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaProdutos"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div class="modal" id="modalDetalhesProduto">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Detalhes do Produto</h3>
+                <button class="icon-btn" id="fecharModalDetalhes">&times;</button>
+            </div>
+            <div id="conteudoDetalhesProduto"></div>
+        </div>
+    </div>
+
+    <script src="../js/app.js"></script>
+    <script src="../js/produtos.js"></script>
+</body>
+
+</html>

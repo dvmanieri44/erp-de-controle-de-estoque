@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERP Controle de Estoque - Saídas</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+
+<body data-page="saidas">
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-card">
+            <h1>🔐 Login do Sistema</h1>
+            <p>Acesse o ERP para continuar.</p>
+
+            <form id="loginForm" class="form-grid">
+                <div class="form-group full-width">
+                    <label for="loginUsuario">Usuário</label>
+                    <input type="text" id="loginUsuario" placeholder="Digite seu usuário" required>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="loginSenha">Senha</label>
+                    <input type="password" id="loginSenha" placeholder="Digite sua senha" required>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Entrar</button>
+                </div>
+            </form>
+
+            <div class="login-hint">
+                Usuários de teste: <strong>admin / 123</strong> e <strong>joao / 1234</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div>
+                <h2>📦 ERP Estoque</h2>
+                <div class="sidebar-subtitle">Sistema de Controle</div>
+            </div>
+
+            <nav>
+                <ul>
+                    <li><a href="index.html">📊 Dashboard</a></li>
+                    <li><a href="produtos.html">📦 Produtos</a></li>
+                    <li><a href="fornecedores.html">🏢 Fornecedores</a></li>
+                    <li><a href="entradas.html">⬆ Entradas</a></li>
+                    <li><a href="saidas.html" class="active">⬇ Saídas</a></li>
+                    <li><a href="relatorios.html">📑 Relatórios</a></li>
+                </ul>
+            </nav>
+
+            <div class="sidebar-bottom">
+                <div class="user-panel">
+                    <strong id="sidebarUser">👤 Usuário</strong>
+                    <span>Administrador</span>
+                </div>
+                <button class="btn btn-secondary btn-full" id="themeToggle">🌙 Alternar tema</button>
+                <button class="btn btn-danger btn-full" id="logoutBtn">🚪 Sair</button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="topbar-system">
+                <div class="topbar-left">
+                    <h2>ERP Controle de Estoque</h2>
+                    <p>Registre saídas de produtos do estoque</p>
+                </div>
+
+                <div class="topbar-right">
+                    <span>📅 <span id="dataAtual"></span></span>
+                    <span>🔔 Saídas</span>
+                    <span id="topbarUser">👤 Usuário</span>
+                </div>
+            </div>
+
+            <header class="topbar">
+                <h1>Saída de Produtos</h1>
+                <p>Registre saídas, controle destinos e acompanhe o histórico.</p>
+            </header>
+
+            <section class="card">
+                <h2>Nova Saída</h2>
+
+                <form id="formSaida" class="form-grid">
+                    <div class="form-group">
+                        <label for="saidaProduto">Produto</label>
+                        <select id="saidaProduto" required></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="saidaQuantidade">Quantidade</label>
+                        <input type="number" id="saidaQuantidade" min="1" placeholder="0" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="saidaDestino">Destino</label>
+                        <input type="text" id="saidaDestino" placeholder="Cliente, setor ou loja" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="saidaData">Data</label>
+                        <input type="date" id="saidaData" required>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Registrar Saída</button>
+                        <button type="reset" class="btn btn-secondary">Limpar</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="card">
+                <div class="section-header">
+                    <h2>Histórico de Saídas</h2>
+
+                    <div class="filters">
+                        <input type="text" id="buscarSaida" placeholder="Buscar por produto ou destino...">
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Produto</th>
+                                <th>Quantidade</th>
+                                <th>Destino</th>
+                                <th>Usuário</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaSaidas"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="../js/app.js"></script>
+    <script src="../js/movimentacoes.js"></script>
+</body>
+
+</html>

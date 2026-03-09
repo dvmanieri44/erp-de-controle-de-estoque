@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERP Controle de Estoque - Relatórios</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+
+<body data-page="relatorios">
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-card">
+            <h1>🔐 Login do Sistema</h1>
+            <p>Acesse o ERP para continuar.</p>
+
+            <form id="loginForm" class="form-grid">
+                <div class="form-group full-width">
+                    <label for="loginUsuario">Usuário</label>
+                    <input type="text" id="loginUsuario" placeholder="Digite seu usuário" required>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="loginSenha">Senha</label>
+                    <input type="password" id="loginSenha" placeholder="Digite sua senha" required>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Entrar</button>
+                </div>
+            </form>
+
+            <div class="login-hint">
+                Usuários de teste: <strong>admin / 123</strong> e <strong>joao / 1234</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div>
+                <h2>📦 ERP Estoque</h2>
+                <div class="sidebar-subtitle">Sistema de Controle</div>
+            </div>
+
+            <nav>
+                <ul>
+                    <li><a href="index.html">📊 Dashboard</a></li>
+                    <li><a href="produtos.html">📦 Produtos</a></li>
+                    <li><a href="fornecedores.html">🏢 Fornecedores</a></li>
+                    <li><a href="entradas.html">⬆ Entradas</a></li>
+                    <li><a href="saidas.html">⬇ Saídas</a></li>
+                    <li><a href="relatorios.html" class="active">📑 Relatórios</a></li>
+                </ul>
+            </nav>
+
+            <div class="sidebar-bottom">
+                <div class="user-panel">
+                    <strong id="sidebarUser">👤 Usuário</strong>
+                    <span>Administrador</span>
+                </div>
+                <button class="btn btn-secondary btn-full" id="themeToggle">🌙 Alternar tema</button>
+                <button class="btn btn-danger btn-full" id="logoutBtn">🚪 Sair</button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="topbar-system">
+                <div class="topbar-left">
+                    <h2>ERP Controle de Estoque</h2>
+                    <p>Relatórios automáticos do sistema</p>
+                </div>
+
+                <div class="topbar-right">
+                    <span>📅 <span id="dataAtual"></span></span>
+                    <span>🔔 Relatórios</span>
+                    <span id="topbarUser">👤 Usuário</span>
+                </div>
+            </div>
+
+            <header class="topbar">
+                <h1>Relatórios</h1>
+                <p>Acompanhe os dados principais do estoque e exporte informações.</p>
+            </header>
+
+            <section class="cards-grid">
+                <div class="info-card">
+                    <h3>📦 Produtos Cadastrados</h3>
+                    <p class="card-number" id="relTotalProdutos">0</p>
+                </div>
+
+                <div class="info-card">
+                    <h3>🏢 Fornecedores Ativos</h3>
+                    <p class="card-number" id="relTotalFornecedores">0</p>
+                </div>
+
+                <div class="info-card">
+                    <h3>⬆ Entradas Registradas</h3>
+                    <p class="card-number" id="relTotalEntradas">0</p>
+                </div>
+
+                <div class="info-card">
+                    <h3>⬇ Saídas Registradas</h3>
+                    <p class="card-number" id="relTotalSaidas">0</p>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="section-header">
+                    <h2>Resumo do Estoque</h2>
+
+                    <div class="filters">
+                        <input type="date" id="filtroDataInicial">
+                        <input type="date" id="filtroDataFinal">
+                        <button class="btn btn-secondary" id="btnFiltrarRelatorio" type="button">Filtrar
+                            período</button>
+                        <button class="btn btn-primary" id="btnExportarRelatorio" type="button">Exportar CSV</button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Produto</th>
+                                <th>Categoria</th>
+                                <th>Fornecedor</th>
+                                <th>Quantidade</th>
+                                <th>Estoque Mínimo</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaResumoProdutos"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Histórico de Movimentações</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Produto</th>
+                                <th>Tipo</th>
+                                <th>Quantidade</th>
+                                <th>Destino / Fornecedor</th>
+                                <th>Usuário</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaRelatorioMovimentacoes"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="../js/app.js"></script>
+    <script src="../js/relatorios.js"></script>
+</body>
+
+</html>
