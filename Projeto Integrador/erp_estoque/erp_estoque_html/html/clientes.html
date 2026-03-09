@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+
+<meta charset="UTF-8">
+<title>Clientes</title>
+
+<link rel="stylesheet" href="../css/style.css">
+
+</head>
+
+<body data-page="clientes">
+
+<div class="container">
+
+<h1>👥 Cadastro de Clientes</h1>
+
+<form id="formCliente">
+
+<input type="text" id="clienteNome" placeholder="Nome do cliente" required>
+
+<input type="text" id="clienteTelefone" placeholder="Telefone">
+
+<button type="submit">Salvar</button>
+
+</form>
+
+<table>
+
+<thead>
+
+<tr>
+<th>Nome</th>
+<th>Telefone</th>
+</tr>
+
+</thead>
+
+<tbody id="tabelaClientes"></tbody>
+
+</table>
+
+</div>
+
+<script src="../js/app.js"></script>
+<script src="../js/clientes.js"></script>
+
+</body>
+</html>
