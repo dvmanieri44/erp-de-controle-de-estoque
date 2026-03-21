@@ -1,8 +1,5 @@
-import { DashboardScreen } from "@/features/dashboard/components/DashboardScreen";
-import { getDashboardSummary } from "@/features/dashboard/services/dashboard.service";
+import { DashboardHome } from "@/components/dashboard/DashboardHome";
 
-export default async function DashboardPage() {
-  const summary = await getDashboardSummary();
-
-  return <DashboardScreen summary={summary} />;
+export default function DashboardPage() {
+  return <DashboardHome />;
 }
