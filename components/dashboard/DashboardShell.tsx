@@ -6,6 +6,9 @@ type DashboardShellProps = {
   children: ReactNode;
 };
 
+
+var teste = 1
+
 export function DashboardShell({ children }: DashboardShellProps) {
   return (
     <div className="min-h-screen bg-[var(--background)] md:flex">
