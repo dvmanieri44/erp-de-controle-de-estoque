@@ -1,14 +1,51 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #0e1b33;
-  --navy-900: #081a3a;
-  --navy-800: #0f295a;
-  --navy-700: #1b3e79;
-  --navy-100: #d8e4ff;
+  --background: #f7f9fc;
+  --foreground: #1f2937;
+  --navy-900: #1f2937;
+  --navy-800: #374151;
+  --navy-700: #4b5563;
+  --navy-100: #6b7280;
   --panel: #ffffff;
-  --panel-border: #e5e7eb;
+  --panel-border: #e7edf5;
+  --panel-muted: #fbfcfe;
+  --panel-soft: #f8fafc;
+  --muted-foreground: #6b7280;
+  --input-bg: #ffffff;
+  --sidebar-bg: #ffffff;
+  --sidebar-border: #edf2f7;
+  --sidebar-active: #eef5ff;
+  --sidebar-active-text: #4b89d9;
+  --accent: #4b89d9;
+  --accent-strong: #2563eb;
+  --accent-soft: #f5f9ff;
+  --icon-surface: #f8fafc;
+  --shadow-color: rgba(15, 23, 42, 0.04);
+}
+
+:root[data-theme="dark"] {
+  --background: #0f172a;
+  --foreground: #e5eefc;
+  --navy-900: #f8fafc;
+  --navy-800: #d8e4ff;
+  --navy-700: #a8b4c8;
+  --navy-100: #94a3b8;
+  --panel: #111827;
+  --panel-border: #243041;
+  --panel-muted: #0f172a;
+  --panel-soft: #172033;
+  --muted-foreground: #94a3b8;
+  --input-bg: #0f172a;
+  --sidebar-bg: #0b1220;
+  --sidebar-border: #1e293b;
+  --sidebar-active: #16243c;
+  --sidebar-active-text: #7db5ff;
+  --accent: #60a5fa;
+  --accent-strong: #3b82f6;
+  --accent-soft: #142033;
+  --icon-surface: #162033;
+  --shadow-color: rgba(2, 6, 23, 0.45);
 }
 
 @theme inline {
@@ -22,4 +59,5 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  transition: background-color 160ms ease, color 160ms ease;
 }

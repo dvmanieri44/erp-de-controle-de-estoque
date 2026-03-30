@@ -14,10 +14,10 @@ const SECTION_METRICS = [
 export function SectionScreen({ section }: SectionScreenProps) {
   return (
     <section className="space-y-8">
-      <header className="rounded-2xl border border-[var(--panel-border)] bg-white px-6 py-8">
-        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">GoodStock</p>
+      <header className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] px-6 py-8 transition-colors">
+        <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">GoodStock</p>
         <h2 className="mt-3 text-3xl font-bold text-[var(--navy-900)]">{section.label}</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">{section.description}</p>
+        <p className="mt-2 max-w-2xl text-sm text-[var(--muted-foreground)]">{section.description}</p>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
