@@ -36,6 +36,44 @@ const NAVIGATION_BEHAVIOR_OPTIONS = [
   { id: "expansivel", label: "Menu expansivel" },
 ] as const;
 
+const CURRENCY_OPTIONS = [
+  "Real (BRL)",
+  "Dolar Americano (USD)",
+  "Euro (EUR)",
+  "Libra Esterlina (GBP)",
+  "Peso Argentino (ARS)",
+  "Peso Chileno (CLP)",
+] as const;
+
+const DATE_FORMAT_OPTIONS = [
+  "DD/MM/YYYY",
+  "MM/DD/YYYY",
+  "YYYY-MM-DD",
+  "DD-MM-YYYY",
+] as const;
+
+const LANGUAGE_OPTIONS = [
+  "Portugues (Brasil)",
+  "English (United States)",
+  "Espanol (Latinoamerica)",
+  "Frances (France)",
+] as const;
+
+const HELP_TOPICS = [
+  {
+    title: "Como cadastrar um novo produto?",
+    description: "Acesse Produtos, clique em novo cadastro e preencha nome, categoria, lote e quantidade inicial.",
+  },
+  {
+    title: "Como acompanhar estoque baixo?",
+    description: "Use a secao Estoque Baixo no menu para visualizar itens com reposicao recomendada.",
+  },
+  {
+    title: "Onde vejo transferencias e historico?",
+    description: "As movimentacoes ficam em Transferencias, Historico e na area de Analytics do painel.",
+  },
+] as const;
+
 function CardSection({
   title,
   icon,
@@ -132,10 +170,12 @@ function InputField({ label, value }: { label: string; value: string }) {
 function SelectField({
   label,
   value,
+  options,
   className = "",
 }: {
   label: string;
   value: string;
+  options: readonly string[];
   className?: string;
 }) {
   return (
@@ -146,7 +186,11 @@ function SelectField({
           defaultValue={value}
           className="h-9 w-full appearance-none rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 pr-8 text-xs text-[var(--foreground)] outline-none transition-colors"
         >
-          <option>{value}</option>
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
         </select>
         <svg
           viewBox="0 0 24 24"
@@ -224,6 +268,18 @@ function NavigationIcon() {
         <path d="M4 7h16" />
         <path d="M4 12h10" />
         <path d="M4 17h16" />
+      </svg>
+    </SmallIcon>
+  );
+}
+
+function HelpIcon() {
+  return (
+    <SmallIcon tone="text-violet-500">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-full w-full">
+        <circle cx="12" cy="12" r="8" />
+        <path d="M9.75 9a2.25 2.25 0 1 1 4.08 1.31c-.45.63-1.08.98-1.58 1.44-.5.45-.83.93-.83 1.75" />
+        <circle cx="12" cy="17" r="0.8" fill="currentColor" stroke="none" />
       </svg>
     </SmallIcon>
   );
@@ -322,9 +378,14 @@ export function SettingsScreen() {
 
         <CardSection title="Regional" icon={<RegionalIcon />}>
           <div className="grid gap-3 md:grid-cols-2">
-            <SelectField label="Moeda" value="Real (BRL)" />
-            <SelectField label="Formato de Data" value="DD/MM/YYYY" />
-            <SelectField label="Idioma" value="Portugues (Brasil)" className="md:col-span-2" />
+            <SelectField label="Moeda" value="Real (BRL)" options={CURRENCY_OPTIONS} />
+            <SelectField label="Formato de Data" value="DD/MM/YYYY" options={DATE_FORMAT_OPTIONS} />
+            <SelectField
+              label="Idioma"
+              value="Portugues (Brasil)"
+              options={LANGUAGE_OPTIONS}
+              className="md:col-span-2"
+            />
           </div>
         </CardSection>
 
@@ -368,6 +429,42 @@ export function SettingsScreen() {
             <InputField label="Email" value="contato@empresa.com" />
             <InputField label="Telefone" value="(11) 99999-9999" />
             <InputField label="Endereco" value="Rua Principal, 123" />
+          </div>
+        </CardSection>
+
+        <CardSection title="Central de ajuda" icon={<HelpIcon />}>
+          <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="space-y-2">
+              {HELP_TOPICS.map((topic) => (
+                <article
+                  key={topic.title}
+                  className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-3 py-3 transition-colors"
+                >
+                  <h3 className="text-sm font-semibold text-[var(--foreground)]">{topic.title}</h3>
+                  <p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">{topic.description}</p>
+                </article>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-3 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
+                  Suporte
+                </p>
+                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">contato@empresa.com</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Seg a sex, das 8h as 18h</p>
+              </div>
+
+              <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-3 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
+                  Documentacao
+                </p>
+                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">Guia rapido do sistema</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  Acesse tutoriais, boas praticas e instrucoes de uso.
+                </p>
+              </div>
+            </div>
           </div>
         </CardSection>
 
