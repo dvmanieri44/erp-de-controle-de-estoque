@@ -3,60 +3,37 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
-  isNavigationBehavior,
-  isNavigationLayout,
-  isThemePreference,
+  COMPANY_SETTINGS_KEY,
+  LANGUAGE_PREFERENCE_KEY,
   NAVIGATION_BEHAVIOR_KEY,
   NAVIGATION_LAYOUT_KEY,
+  NOTIFICATION_SETTINGS_KEY,
   THEME_PREFERENCE_KEY,
   UI_PREFERENCES_EVENT,
-  type NavigationBehavior,
-  type NavigationLayout,
+  isLanguagePreference,
+  isThemePreference,
+  type CompanySettings,
+  type LanguagePreference,
+  type NotificationSettings,
+  type ThemePreference,
 } from "@/lib/ui-preferences";
 
 const APPEARANCE_OPTIONS = [
   { id: "claro", label: "Claro" },
   { id: "escuro", label: "Escuro" },
-  { id: "automatico", label: "Automatico" },
-] as const;
-
-const NOTIFICATION_OPTIONS = [
-  { id: "email", label: "Notificacoes por Email", enabled: true },
-  { id: "estoque", label: "Alertas de Estoque Baixo", enabled: true },
-  { id: "validade", label: "Alertas de Validade", enabled: true },
-];
-
-const NAVIGATION_OPTIONS = [
-  { id: "lateral", label: "Menu lateral" },
-  { id: "superior", label: "Menu superior" },
-] as const;
-
-const NAVIGATION_BEHAVIOR_OPTIONS = [
-  { id: "fixo", label: "Menu fixo" },
-  { id: "expansivel", label: "Menu expansivel" },
-] as const;
-
-const CURRENCY_OPTIONS = [
-  "Real (BRL)",
-  "Dolar Americano (USD)",
-  "Euro (EUR)",
-  "Libra Esterlina (GBP)",
-  "Peso Argentino (ARS)",
-  "Peso Chileno (CLP)",
-] as const;
-
-const DATE_FORMAT_OPTIONS = [
-  "DD/MM/YYYY",
-  "MM/DD/YYYY",
-  "YYYY-MM-DD",
-  "DD-MM-YYYY",
+  { id: "automatico", label: "Automático" },
 ] as const;
 
 const LANGUAGE_OPTIONS = [
-  "Portugues (Brasil)",
-  "English (United States)",
-  "Espanol (Latinoamerica)",
-  "Frances (France)",
+  { value: "pt-BR", label: "Português (Brasil)" },
+  { value: "en-US", label: "English (United States)" },
+] as const;
+
+const NOTIFICATION_OPTIONS = [
+  { id: "email", label: "Notificações por e-mail" },
+  { id: "stock", label: "Alertas de estoque baixo" },
+  { id: "expiration", label: "Alertas de validade" },
+  { id: "dailySummary", label: "Resumo diário por e-mail" },
 ] as const;
 
 const HELP_TOPICS = [
@@ -66,13 +43,37 @@ const HELP_TOPICS = [
   },
   {
     title: "Como acompanhar estoque baixo?",
-    description: "Use a secao Estoque Baixo no menu para visualizar itens com reposicao recomendada.",
+    description: "Use a seção Estoque Baixo no menu para visualizar itens com reposição recomendada.",
   },
   {
-    title: "Onde vejo transferencias e historico?",
-    description: "As movimentacoes ficam em Transferencias, Historico e na area de Analytics do painel.",
+    title: "Onde vejo transferências e histórico?",
+    description: "As movimentações ficam em Transferências, Histórico e na área de Analytics do painel.",
   },
 ] as const;
+
+const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
+  companyName: "Minha Empresa",
+  legalName: "Minha Empresa LTDA",
+  taxId: "00.000.000/0001-00",
+  email: "contato@empresa.com",
+  phone: "(11) 99999-9999",
+  whatsapp: "(11) 99999-9999",
+  address: "Rua Principal, 123",
+};
+
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  email: true,
+  stock: true,
+  expiration: true,
+  dailySummary: false,
+};
+
+type SettingsFormState = {
+  theme: ThemePreference;
+  language: LanguagePreference;
+  notifications: NotificationSettings;
+  company: CompanySettings;
+};
 
 function CardSection({
   title,
@@ -130,65 +131,29 @@ function ThemeOption({
   );
 }
 
-function NavigationOption({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl border px-4 py-3 text-left transition ${
-        active
-          ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-          : "border-[var(--panel-border)] bg-[var(--panel)]"
-      }`}
-    >
-      <p className="text-sm font-medium text-[var(--foreground)]">{label}</p>
-    </button>
-  );
-}
-
-function InputField({ label, value }: { label: string; value: string }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">{label}</span>
-      <input
-        readOnly
-        value={value}
-        className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
-      />
-    </label>
-  );
-}
-
 function SelectField({
   label,
   value,
   options,
-  className = "",
+  onChange,
 }: {
   label: string;
   value: string;
-  options: readonly string[];
-  className?: string;
+  options: readonly { value: string; label: string }[];
+  onChange: (value: string) => void;
 }) {
   return (
-    <label className={className}>
+    <label className="block">
       <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">{label}</span>
       <div className="relative">
         <select
-          defaultValue={value}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
           className="h-9 w-full appearance-none rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 pr-8 text-xs text-[var(--foreground)] outline-none transition-colors"
         >
           {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
+            <option key={option.value} value={option.value}>
+              {option.label}
             </option>
           ))}
         </select>
@@ -202,19 +167,6 @@ function SelectField({
           <path d="m6 9 6 6 6-6" />
         </svg>
       </div>
-    </label>
-  );
-}
-
-function CheckRow({ label, checked }: { label: string; checked: boolean }) {
-  return (
-    <label className="flex items-center justify-between py-1.5">
-      <span className="text-xs text-[var(--foreground)]">{label}</span>
-      <input
-        type="checkbox"
-        defaultChecked={checked}
-        className="h-3.5 w-3.5 rounded-[3px] border-slate-300 text-[var(--accent)] focus:ring-[var(--accent)]"
-      />
     </label>
   );
 }
@@ -261,18 +213,6 @@ function CompanyIcon() {
   );
 }
 
-function NavigationIcon() {
-  return (
-    <SmallIcon tone="text-sky-500">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-full w-full">
-        <path d="M4 7h16" />
-        <path d="M4 12h10" />
-        <path d="M4 17h16" />
-      </svg>
-    </SmallIcon>
-  );
-}
-
 function HelpIcon() {
   return (
     <SmallIcon tone="text-violet-500">
@@ -285,27 +225,40 @@ function HelpIcon() {
   );
 }
 
+function buildInitialState(): SettingsFormState {
+  return {
+    theme: "claro",
+    language: "pt-BR",
+    notifications: DEFAULT_NOTIFICATION_SETTINGS,
+    company: DEFAULT_COMPANY_SETTINGS,
+  };
+}
+
 export function SettingsScreen() {
-  const [selectedAppearance, setSelectedAppearance] = useState("claro");
-  const [navigationLayout, setNavigationLayout] = useState<NavigationLayout>("lateral");
-  const [navigationBehavior, setNavigationBehavior] = useState<NavigationBehavior>("fixo");
+  const [savedSettings, setSavedSettings] = useState<SettingsFormState | null>(null);
+  const [formState, setFormState] = useState<SettingsFormState>(buildInitialState);
+
+  const hasChanges = savedSettings !== null && JSON.stringify(savedSettings) !== JSON.stringify(formState);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem(THEME_PREFERENCE_KEY);
-    const storedNavigation = window.localStorage.getItem(NAVIGATION_LAYOUT_KEY);
-    const storedBehavior = window.localStorage.getItem(NAVIGATION_BEHAVIOR_KEY);
+    const storedLanguage = window.localStorage.getItem(LANGUAGE_PREFERENCE_KEY);
+    const storedCompany = window.localStorage.getItem(COMPANY_SETTINGS_KEY);
+    const storedNotifications = window.localStorage.getItem(NOTIFICATION_SETTINGS_KEY);
 
-    if (isThemePreference(storedTheme)) {
-      setSelectedAppearance(storedTheme);
-    }
+    const nextState: SettingsFormState = {
+      theme: isThemePreference(storedTheme) ? storedTheme : "claro",
+      language: isLanguagePreference(storedLanguage) ? storedLanguage : "pt-BR",
+      notifications: storedNotifications
+        ? { ...DEFAULT_NOTIFICATION_SETTINGS, ...JSON.parse(storedNotifications) }
+        : DEFAULT_NOTIFICATION_SETTINGS,
+      company: storedCompany
+        ? { ...DEFAULT_COMPANY_SETTINGS, ...JSON.parse(storedCompany) }
+        : DEFAULT_COMPANY_SETTINGS,
+    };
 
-    if (isNavigationLayout(storedNavigation)) {
-      setNavigationLayout(storedNavigation);
-    }
-
-    if (isNavigationBehavior(storedBehavior)) {
-      setNavigationBehavior(storedBehavior);
-    }
+    setFormState(nextState);
+    setSavedSettings(nextState);
   }, []);
 
   useEffect(() => {
@@ -313,45 +266,57 @@ export function SettingsScreen() {
 
     const applyTheme = () => {
       const resolvedTheme =
-        selectedAppearance === "automatico"
+        formState.theme === "automatico"
           ? mediaQuery.matches
             ? "dark"
             : "light"
-          : selectedAppearance === "escuro"
+          : formState.theme === "escuro"
             ? "dark"
             : "light";
 
       document.documentElement.dataset.theme = resolvedTheme;
-      window.localStorage.setItem(THEME_PREFERENCE_KEY, selectedAppearance);
-      window.dispatchEvent(new Event(UI_PREFERENCES_EVENT));
     };
 
     applyTheme();
 
-    if (selectedAppearance !== "automatico") {
+    if (formState.theme !== "automatico") {
       return;
     }
 
-    const handleChange = () => {
-      applyTheme();
-    };
+    mediaQuery.addEventListener("change", applyTheme);
+    return () => mediaQuery.removeEventListener("change", applyTheme);
+  }, [formState.theme]);
 
-    mediaQuery.addEventListener("change", handleChange);
+  function updateCompanyField(field: keyof CompanySettings, value: string) {
+    setFormState((current) => ({
+      ...current,
+      company: {
+        ...current.company,
+        [field]: value,
+      },
+    }));
+  }
 
-    return () => {
-      mediaQuery.removeEventListener("change", handleChange);
-    };
-  }, [selectedAppearance]);
+  function updateNotificationField(field: keyof NotificationSettings, value: boolean) {
+    setFormState((current) => ({
+      ...current,
+      notifications: {
+        ...current.notifications,
+        [field]: value,
+      },
+    }));
+  }
 
-  useEffect(() => {
-    window.localStorage.setItem(NAVIGATION_LAYOUT_KEY, navigationLayout);
+  function handleSave() {
+    window.localStorage.setItem(THEME_PREFERENCE_KEY, formState.theme);
+    window.localStorage.setItem(LANGUAGE_PREFERENCE_KEY, formState.language);
+    window.localStorage.setItem(NAVIGATION_LAYOUT_KEY, "lateral");
+    window.localStorage.setItem(NAVIGATION_BEHAVIOR_KEY, "fixo");
+    window.localStorage.setItem(COMPANY_SETTINGS_KEY, JSON.stringify(formState.company));
+    window.localStorage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify(formState.notifications));
     window.dispatchEvent(new Event(UI_PREFERENCES_EVENT));
-  }, [navigationLayout]);
-
-  useEffect(() => {
-    window.localStorage.setItem(NAVIGATION_BEHAVIOR_KEY, navigationBehavior);
-    window.dispatchEvent(new Event(UI_PREFERENCES_EVENT));
-  }, [navigationBehavior]);
+    setSavedSettings(formState);
+  }
 
   return (
     <section className="relative min-h-full bg-[var(--panel-muted)] transition-colors">
@@ -359,76 +324,106 @@ export function SettingsScreen() {
 
       <div className="space-y-4 pt-5">
         <header className="px-2">
-          <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-[var(--foreground)]">Configuracoes</h1>
+          <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-[var(--foreground)]">Configurações</h1>
         </header>
 
-        <CardSection title="Aparencia" icon={<AppearanceIcon />}>
+        <CardSection title="Aparência" icon={<AppearanceIcon />}>
           <div className="mb-2 text-[11px] font-medium text-[var(--muted-foreground)]">Tema</div>
           <div className="grid gap-2 md:grid-cols-3">
             {APPEARANCE_OPTIONS.map((option) => (
               <ThemeOption
                 key={option.id}
                 label={option.label}
-                active={selectedAppearance === option.id}
-                onClick={() => setSelectedAppearance(option.id)}
+                active={formState.theme === option.id}
+                onClick={() => setFormState((current) => ({ ...current, theme: option.id }))}
               />
             ))}
           </div>
         </CardSection>
 
         <CardSection title="Regional" icon={<RegionalIcon />}>
-          <div className="grid gap-3 md:grid-cols-2">
-            <SelectField label="Moeda" value="Real (BRL)" options={CURRENCY_OPTIONS} />
-            <SelectField label="Formato de Data" value="DD/MM/YYYY" options={DATE_FORMAT_OPTIONS} />
-            <SelectField
-              label="Idioma"
-              value="Portugues (Brasil)"
-              options={LANGUAGE_OPTIONS}
-              className="md:col-span-2"
-            />
-          </div>
+          <SelectField
+            label="Idioma"
+            value={formState.language}
+            options={LANGUAGE_OPTIONS}
+            onChange={(value) => setFormState((current) => ({ ...current, language: value as LanguagePreference }))}
+          />
         </CardSection>
 
-        <CardSection title="Navegacao" icon={<NavigationIcon />}>
-          <div className="grid gap-3">
-            <div className="grid gap-2 md:grid-cols-2">
-              {NAVIGATION_OPTIONS.map((option) => (
-                <NavigationOption
-                  key={option.id}
-                  label={option.label}
-                  active={navigationLayout === option.id}
-                  onClick={() => setNavigationLayout(option.id)}
-                />
-              ))}
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-2">
-              {NAVIGATION_BEHAVIOR_OPTIONS.map((option) => (
-                <NavigationOption
-                  key={option.id}
-                  label={option.label}
-                  active={navigationBehavior === option.id}
-                  onClick={() => setNavigationBehavior(option.id)}
-                />
-              ))}
-            </div>
-          </div>
-        </CardSection>
-
-        <CardSection title="Notificacoes" icon={<NotificationIcon />}>
+        <CardSection title="Notificações" icon={<NotificationIcon />}>
           <div className="space-y-0.5">
             {NOTIFICATION_OPTIONS.map((option) => (
-              <CheckRow key={option.id} label={option.label} checked={option.enabled} />
+              <label key={option.id} className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-[var(--foreground)]">{option.label}</span>
+                <input
+                  type="checkbox"
+                  checked={formState.notifications[option.id]}
+                  onChange={(event) => updateNotificationField(option.id, event.target.checked)}
+                  className="h-3.5 w-3.5 rounded-[3px] border-slate-300 text-[var(--accent)] focus:ring-[var(--accent)]"
+                />
+              </label>
             ))}
           </div>
         </CardSection>
 
-        <CardSection title="Informacoes da Empresa" icon={<CompanyIcon />}>
+        <CardSection title="Informações da Empresa" icon={<CompanyIcon />}>
           <div className="grid gap-3 md:grid-cols-2">
-            <InputField label="Nome da Empresa" value="Minha Empresa" />
-            <InputField label="Email" value="contato@empresa.com" />
-            <InputField label="Telefone" value="(11) 99999-9999" />
-            <InputField label="Endereco" value="Rua Principal, 123" />
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">Nome da empresa</span>
+              <input
+                value={formState.company.companyName}
+                onChange={(event) => updateCompanyField("companyName", event.target.value)}
+                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">Razão social</span>
+              <input
+                value={formState.company.legalName}
+                onChange={(event) => updateCompanyField("legalName", event.target.value)}
+                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">CNPJ</span>
+              <input
+                value={formState.company.taxId}
+                onChange={(event) => updateCompanyField("taxId", event.target.value)}
+                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">E-mail</span>
+              <input
+                value={formState.company.email}
+                onChange={(event) => updateCompanyField("email", event.target.value)}
+                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">Telefone</span>
+              <input
+                value={formState.company.phone}
+                onChange={(event) => updateCompanyField("phone", event.target.value)}
+                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">WhatsApp</span>
+              <input
+                value={formState.company.whatsapp}
+                onChange={(event) => updateCompanyField("whatsapp", event.target.value)}
+                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
+              />
+            </label>
+            <label className="block md:col-span-2">
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">Endereço</span>
+              <input
+                value={formState.company.address}
+                onChange={(event) => updateCompanyField("address", event.target.value)}
+                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
+              />
+            </label>
           </div>
         </CardSection>
 
@@ -451,17 +446,18 @@ export function SettingsScreen() {
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
                   Suporte
                 </p>
-                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">contato@empresa.com</p>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Seg a sex, das 8h as 18h</p>
+                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">{savedSettings?.company.email ?? formState.company.email}</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">{savedSettings?.company.whatsapp ?? formState.company.whatsapp}</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Seg a sex, das 8h às 18h</p>
               </div>
 
               <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-3 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
-                  Documentacao
+                  Documentação
                 </p>
-                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">Guia rapido do sistema</p>
+                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">Guia rápido do sistema</p>
                 <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Acesse tutoriais, boas praticas e instrucoes de uso.
+                  Acesse tutoriais, boas práticas e instruções de uso.
                 </p>
               </div>
             </div>
@@ -471,13 +467,19 @@ export function SettingsScreen() {
         <div className="flex justify-end pt-1">
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-4 py-2.5 text-xs font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.22)]"
+            onClick={handleSave}
+            disabled={!hasChanges}
+            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold text-white transition ${
+              hasChanges
+                ? "bg-[#2563eb] shadow-[0_8px_20px_rgba(37,99,235,0.22)]"
+                : "cursor-not-allowed bg-slate-300 shadow-none"
+            }`}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
               <path d="M5 20h14" />
               <path d="M5 4h11l3 3v13H5V4Z" />
             </svg>
-            Salvar Configuracoes
+            Salvar alterações
           </button>
         </div>
       </div>

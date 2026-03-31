@@ -9,31 +9,31 @@ export const DASHBOARD_SECTIONS: DashboardSection[] = [
   {
     id: "dashboard",
     label: "Dashboard",
-    description: "Visao geral de indicadores do estoque.",
+    description: "Visão geral de indicadores do estoque.",
     group: "principal",
   },
   {
     id: "produtos",
     label: "Produtos",
-    description: "Catalogo de produtos e dados essenciais.",
+    description: "Catálogo de produtos e dados essenciais.",
     group: "estoque",
   },
   {
     id: "movimentacoes",
-    label: "Movimentacoes",
-    description: "Historico de transferencias e movimentacoes internas.",
+    label: "Movimentações",
+    description: "Histórico de transferências e movimentações internas.",
     group: "estoque",
   },
   {
     id: "estoque-baixo",
     label: "Estoque Baixo",
-    description: "Lista de itens com quantidade abaixo do minimo ideal.",
+    description: "Lista de itens com quantidade abaixo do mínimo ideal.",
     group: "estoque",
   },
   {
     id: "lotes",
     label: "Lotes",
-    description: "Gestao de lotes e rastreabilidade.",
+    description: "Gestão de lotes e rastreabilidade.",
     group: "estoque",
   },
   {
@@ -45,43 +45,43 @@ export const DASHBOARD_SECTIONS: DashboardSection[] = [
   {
     id: "categorias",
     label: "Categorias",
-    description: "Organizacao de produtos por categorias e familias.",
+    description: "Organização de produtos por categorias e famílias.",
     group: "gestao",
   },
   {
     id: "localizacoes",
-    label: "Localizacoes",
-    description: "Mapa de ruas, corredores e posicoes no estoque.",
+    label: "Localizações",
+    description: "Mapa de ruas, corredores e posições no estoque.",
     group: "gestao",
   },
   {
     id: "transferencias",
-    label: "Transferencias",
-    description: "Transferencias internas entre locais e depositos.",
+    label: "Transferências",
+    description: "Transferências internas entre locais e depósitos.",
     group: "gestao",
   },
   {
     id: "relatorios",
-    label: "Relatorios",
-    description: "Analises e exportacoes gerenciais.",
+    label: "Relatórios",
+    description: "Análises e exportações gerenciais.",
     group: "relatorios",
   },
   {
     id: "analytics",
     label: "Analytics",
-    description: "Indicadores, tendencias e comparativos do estoque.",
+    description: "Indicadores, tendências e comparativos do estoque.",
     group: "relatorios",
   },
   {
     id: "historico",
-    label: "Historico",
-    description: "Linha do tempo completa das operacoes realizadas.",
+    label: "Histórico",
+    description: "Linha do tempo completa das operações realizadas.",
     group: "relatorios",
   },
   {
     id: "configuracoes",
-    label: "Configuracoes",
-    description: "Preferencias da conta, idioma, notificacoes e dados da empresa.",
+    label: "Configurações",
+    description: "Preferências da conta, idioma, notificações e dados da empresa.",
     group: "configuracoes",
   },
 ];
@@ -91,8 +91,8 @@ export const DEFAULT_SECTION_ID = "dashboard";
 export const DASHBOARD_GROUPS = [
   { id: "principal", label: "Principal" },
   { id: "estoque", label: "Estoque" },
-  { id: "gestao", label: "Gestao" },
-  { id: "relatorios", label: "Relatorios" },
+  { id: "gestao", label: "Gestão" },
+  { id: "relatorios", label: "Relatórios" },
 ] as const;
 
 export function getSectionById(sectionId: string) {

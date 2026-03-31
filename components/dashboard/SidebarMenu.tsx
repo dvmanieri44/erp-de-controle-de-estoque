@@ -234,7 +234,7 @@ function SideNavigation({
 
   return (
     <aside
-      className={`flex w-full flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-3 py-5 transition-all transition-colors md:min-h-screen ${
+      className={`flex w-full flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-3 py-5 transition-all transition-colors md:sticky md:top-0 md:h-screen md:self-start ${
         collapsed ? "md:w-[92px]" : "md:w-[258px]"
       }`}
     >
@@ -254,7 +254,7 @@ function SideNavigation({
         ) : null}
       </div>
 
-      <nav aria-label="Menu principal" className="flex-1">
+      <nav aria-label="Menu principal" className="flex-1 overflow-y-auto pr-1">
         <div className="space-y-5">
           {DASHBOARD_GROUPS.map((group) => {
             const sections = DASHBOARD_SECTIONS.filter((section) => section.group === group.id);
@@ -290,8 +290,8 @@ function SideNavigation({
           </div>
           {collapsed ? null : (
             <div>
-              <p className="text-sm font-medium text-[var(--foreground)]">Joao Silva</p>
-              <p className="text-xs text-[var(--muted-foreground)]">Usuario ativo</p>
+              <p className="text-sm font-medium text-[var(--foreground)]">João Silva</p>
+              <p className="text-xs text-[var(--muted-foreground)]">Usuário ativo</p>
             </div>
           )}
         </div>
@@ -352,8 +352,8 @@ function TopNavigation({
             JS
           </div>
           <div>
-            <p className="text-sm font-medium text-[var(--foreground)]">Joao Silva</p>
-            <p className="text-xs text-[var(--muted-foreground)]">Usuario ativo</p>
+            <p className="text-sm font-medium text-[var(--foreground)]">João Silva</p>
+            <p className="text-xs text-[var(--muted-foreground)]">Usuário ativo</p>
           </div>
         </div>
       </div>

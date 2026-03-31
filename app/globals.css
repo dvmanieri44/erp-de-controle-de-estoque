@@ -1,51 +1,51 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f9fc;
-  --foreground: #1f2937;
-  --navy-900: #1f2937;
-  --navy-800: #374151;
-  --navy-700: #4b5563;
-  --navy-100: #6b7280;
+  --background: #ffffff;
+  --foreground: #0e1b33;
+  --navy-900: #081a3a;
+  --navy-800: #0f295a;
+  --navy-700: #1b3e79;
+  --navy-100: #d8e4ff;
   --panel: #ffffff;
-  --panel-border: #e7edf5;
-  --panel-muted: #fbfcfe;
-  --panel-soft: #f8fafc;
-  --muted-foreground: #6b7280;
+  --panel-border: #e5e7eb;
+  --panel-soft: #f5f8ff;
+  --panel-muted: #eef4ff;
+  --sidebar-bg: #f8fbff;
+  --sidebar-border: #dbe6f5;
+  --sidebar-active: #dbeafe;
+  --sidebar-active-text: #0f295a;
+  --muted-foreground: #5b6b84;
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --icon-surface: #edf4ff;
   --input-bg: #ffffff;
-  --sidebar-bg: #ffffff;
-  --sidebar-border: #edf2f7;
-  --sidebar-active: #eef5ff;
-  --sidebar-active-text: #4b89d9;
-  --accent: #4b89d9;
-  --accent-strong: #2563eb;
-  --accent-soft: #f5f9ff;
-  --icon-surface: #f8fafc;
-  --shadow-color: rgba(15, 23, 42, 0.04);
+  --shadow-color: rgba(15, 41, 90, 0.08);
+  color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --background: #0f172a;
-  --foreground: #e5eefc;
-  --navy-900: #f8fafc;
+  --background: #09111f;
+  --foreground: #e8eefc;
+  --navy-900: #f4f7ff;
   --navy-800: #d8e4ff;
-  --navy-700: #a8b4c8;
-  --navy-100: #94a3b8;
-  --panel: #111827;
-  --panel-border: #243041;
-  --panel-muted: #0f172a;
-  --panel-soft: #172033;
-  --muted-foreground: #94a3b8;
-  --input-bg: #0f172a;
-  --sidebar-bg: #0b1220;
-  --sidebar-border: #1e293b;
-  --sidebar-active: #16243c;
-  --sidebar-active-text: #7db5ff;
+  --navy-700: #bdd0f7;
+  --navy-100: rgba(131, 164, 230, 0.22);
+  --panel: #0f1b31;
+  --panel-border: #1f3154;
+  --panel-soft: #12213a;
+  --panel-muted: #0b1527;
+  --sidebar-bg: #0c1628;
+  --sidebar-border: #1b2c49;
+  --sidebar-active: #1e3a6b;
+  --sidebar-active-text: #f5f9ff;
+  --muted-foreground: #9fb2d3;
   --accent: #60a5fa;
-  --accent-strong: #3b82f6;
-  --accent-soft: #142033;
-  --icon-surface: #162033;
-  --shadow-color: rgba(2, 6, 23, 0.45);
+  --accent-soft: rgba(96, 165, 250, 0.18);
+  --icon-surface: #132642;
+  --input-bg: #13213a;
+  --shadow-color: rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -59,5 +59,11 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-  transition: background-color 160ms ease, color 160ms ease;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+* {
+  scrollbar-color: var(--muted-foreground) transparent;
 }
