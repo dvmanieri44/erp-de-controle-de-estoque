@@ -17,6 +17,9 @@ type DashboardShellProps = {
   children: ReactNode;
 };
 
+
+var teste = 1
+
 export function DashboardShell({ children }: DashboardShellProps) {
   const [navigationLayout, setNavigationLayout] = useState<NavigationLayout>("lateral");
   const [navigationBehavior, setNavigationBehavior] = useState<NavigationBehavior>("fixo");
