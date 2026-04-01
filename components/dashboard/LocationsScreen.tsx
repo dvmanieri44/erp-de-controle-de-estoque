@@ -3,52 +3,30 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type LocationType = "Dep\u00f3sito" | "Loja" | "Armaz\u00e9m";
-type LocationStatus = "Ativa" | "Inativa" | "Em manuten\u00e7\u00e3o";
-
-type LocationItem = {
-  id: string;
-  name: string;
-  type: LocationType;
-  address: string;
-  manager: string;
-  capacity: number;
-  status: LocationStatus;
-};
+import {
+  INITIAL_LOCATIONS,
+  LOCATION_STATUS,
+  LOCATION_TYPES,
+  createLocationId,
+  formatUnits,
+  getLocationAvailableCapacity,
+  getLocationUsedCapacity,
+  loadLocations,
+  loadMovements,
+  normalizeText,
+  parseCapacity,
+  saveLocations,
+  type LocationItem,
+  type LocationStatus,
+  type LocationType,
+  type MovementItem,
+} from "@/lib/inventory";
 
 type ToastState = {
   id: number;
   message: string;
   tone: "success" | "error";
 } | null;
-
-type FormErrors = Partial<Record<keyof LocationFormState, string>>;
-
-const STORAGE_KEY = "erp.locations";
-
-const INITIAL_LOCATIONS: LocationItem[] = [
-  {
-    id: "deposito-principal",
-    name: "Dep\u00f3sito Principal",
-    type: "Dep\u00f3sito",
-    address: "Rua Central, 100 - S\u00e3o Paulo",
-    manager: "Roberto Lima",
-    capacity: 10000,
-    status: "Ativa",
-  },
-  {
-    id: "loja-centro",
-    name: "Loja Centro",
-    type: "Loja",
-    address: "Av. Paulista, 500 - S\u00e3o Paulo",
-    manager: "Maria Costa",
-    capacity: 2000,
-    status: "Ativa",
-  },
-] as const;
-
-const LOCATION_TYPES: Array<LocationType | "Todos"> = ["Todos", "Dep\u00f3sito", "Loja", "Armaz\u00e9m"];
-const LOCATION_STATUS: LocationStatus[] = ["Ativa", "Inativa", "Em manuten\u00e7\u00e3o"];
 
 type LocationFormState = {
   name: string;
@@ -59,36 +37,16 @@ type LocationFormState = {
   status: LocationStatus;
 };
 
+type FormErrors = Partial<Record<keyof LocationFormState, string>>;
+
 const EMPTY_FORM: LocationFormState = {
   name: "",
-  type: "Dep\u00f3sito",
+  type: "Depósito",
   address: "",
   manager: "",
   capacity: "",
   status: "Ativa",
 };
-
-function createLocationId(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-function normalizeText(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-}
-
-function parseCapacity(value: string) {
-  const digits = value.replace(/\D/g, "");
-  return digits ? Number(digits) : NaN;
-}
-
-function formatCapacity(value: number) {
-  return `${new Intl.NumberFormat("pt-BR").format(value)} unidades`;
-}
 
 function LocationIcon() {
   return (
@@ -107,11 +65,25 @@ function StatusBadge({ status }: { status: LocationStatus }) {
   const tone =
     status === "Ativa"
       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-      : status === "Em manuten\u00e7\u00e3o"
+      : status === "Em manutenção"
         ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
         : "bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300";
 
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>{status}</span>;
+}
+
+function ProgressBar({ value, max }: { value: number; max: number }) {
+  const percent = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+  const tone = percent >= 90 ? "bg-red-500" : percent >= 70 ? "bg-amber-500" : "bg-emerald-500";
+
+  return (
+    <div>
+      <div className="h-2 rounded-full bg-[var(--panel-soft)]">
+        <div className={`h-2 rounded-full transition-all ${tone}`} style={{ width: `${percent}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-[var(--muted-foreground)]">{percent.toFixed(0)}% da capacidade utilizada</p>
+    </div>
+  );
 }
 
 function ActionButton({
@@ -152,13 +124,18 @@ function MetricCard({ title, value }: { title: string; value: string }) {
 
 function LocationCard({
   location,
+  movements,
   onEdit,
   onDelete,
 }: {
   location: LocationItem;
+  movements: MovementItem[];
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const used = Math.max(0, getLocationUsedCapacity(location.id, movements));
+  const available = Math.max(0, getLocationAvailableCapacity(location, movements));
+
   return (
     <article className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 shadow-[0_6px_18px_var(--shadow-color)] transition-colors">
       <div className="flex items-start justify-between gap-3">
@@ -199,8 +176,18 @@ function LocationCard({
           <span className="font-semibold text-[var(--foreground)]">Gerente:</span> {location.manager}
         </p>
         <p>
-          <span className="font-semibold text-[var(--foreground)]">Capacidade:</span> {formatCapacity(location.capacity)}
+          <span className="font-semibold text-[var(--foreground)]">Capacidade total:</span> {formatUnits(location.capacityTotal)}
         </p>
+        <p>
+          <span className="font-semibold text-[var(--foreground)]">Ocupado:</span> {formatUnits(used)}
+        </p>
+        <p>
+          <span className="font-semibold text-[var(--foreground)]">Disponível:</span> {formatUnits(available)}
+        </p>
+      </div>
+
+      <div className="mt-4">
+        <ProgressBar value={used} max={location.capacityTotal} />
       </div>
     </article>
   );
@@ -240,6 +227,8 @@ function Toast({ toast }: { toast: NonNullable<ToastState> }) {
 
 export function LocationsScreen() {
   const [locations, setLocations] = useState<LocationItem[]>(INITIAL_LOCATIONS);
+  const [movements, setMovements] = useState<MovementItem[]>([]);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedType, setSelectedType] = useState<LocationType | "Todos">("Todos");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -252,29 +241,42 @@ export function LocationsScreen() {
 
   useEffect(() => {
     try {
-      const storedLocations = window.localStorage.getItem(STORAGE_KEY);
-
-      if (!storedLocations) {
-        return;
-      }
-
-      const parsed = JSON.parse(storedLocations) as LocationItem[];
-
-      if (Array.isArray(parsed)) {
-        setLocations(parsed);
-      }
+      setLocations(loadLocations());
+      setMovements(loadMovements());
+      setHasLoaded(true);
     } catch {
       setToast({
         id: Date.now(),
-        message: "Não foi possível carregar as localizações salvas.",
+        message: "Não foi possível carregar os dados salvos.",
         tone: "error",
       });
     }
+
+    function syncInventory() {
+      try {
+        setLocations(loadLocations());
+        setMovements(loadMovements());
+        setHasLoaded(true);
+      } catch {
+        setToast({
+          id: Date.now(),
+          message: "Não foi possível sincronizar os dados.",
+          tone: "error",
+        });
+      }
+    }
+
+    window.addEventListener("storage", syncInventory);
+    return () => window.removeEventListener("storage", syncInventory);
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
-  }, [locations]);
+    if (!hasLoaded) {
+      return;
+    }
+
+    saveLocations(locations);
+  }, [hasLoaded, locations]);
 
   useEffect(() => {
     if (!toast) {
@@ -332,25 +334,33 @@ export function LocationsScreen() {
       }
 
       return normalizeText(
-        [location.name, location.type, location.address, location.manager, location.status, formatCapacity(location.capacity)].join(
-          " ",
-        ),
+        [
+          location.name,
+          location.type,
+          location.address,
+          location.manager,
+          location.status,
+          formatUnits(location.capacityTotal),
+          formatUnits(getLocationUsedCapacity(location.id, movements)),
+        ].join(" "),
       ).includes(query);
     });
-  }, [locations, search, selectedType]);
+  }, [locations, movements, search, selectedType]);
 
   const metrics = useMemo(() => {
-    const deposits = locations.filter((location) => location.type === "Dep\u00f3sito").length;
+    const deposits = locations.filter((location) => location.type === "Depósito").length;
     const stores = locations.filter((location) => location.type === "Loja").length;
-    const totalCapacity = locations.reduce((sum, location) => sum + location.capacity, 0);
+    const totalCapacity = locations.reduce((sum, location) => sum + location.capacityTotal, 0);
+    const totalUsed = locations.reduce((sum, location) => sum + Math.max(0, getLocationUsedCapacity(location.id, movements)), 0);
 
     return {
       total: locations.length,
       deposits,
       stores,
       totalCapacity,
+      totalAvailable: Math.max(0, totalCapacity - totalUsed),
     };
-  }, [locations]);
+  }, [locations, movements]);
 
   const isEditing = editingId !== null;
 
@@ -368,7 +378,7 @@ export function LocationsScreen() {
       type: location.type,
       address: location.address,
       manager: location.manager,
-      capacity: String(location.capacity),
+      capacity: String(location.capacityTotal),
       status: location.status,
     });
     setErrors({});
@@ -386,6 +396,9 @@ export function LocationsScreen() {
     const nextErrors: FormErrors = {};
     const normalizedName = normalizeText(values.name);
     const parsedCapacity = parseCapacity(values.capacity);
+    const currentUsed = editingId
+      ? Math.max(0, getLocationUsedCapacity(editingId, movements))
+      : 0;
 
     if (!values.name.trim()) {
       nextErrors.name = "Informe o nome da localização.";
@@ -407,6 +420,8 @@ export function LocationsScreen() {
       nextErrors.capacity = "Informe a capacidade máxima.";
     } else if (!Number.isFinite(parsedCapacity) || parsedCapacity <= 0) {
       nextErrors.capacity = "Use apenas números e informe um valor maior que zero.";
+    } else if (parsedCapacity < currentUsed) {
+      nextErrors.capacity = "A capacidade total não pode ser menor que o volume já ocupado.";
     }
 
     return nextErrors;
@@ -428,8 +443,12 @@ export function LocationsScreen() {
           location.id === editingId
             ? {
                 ...location,
-                ...form,
-                capacity: parsedCapacity,
+                name: form.name.trim(),
+                type: form.type,
+                address: form.address.trim(),
+                manager: form.manager.trim(),
+                capacityTotal: parsedCapacity,
+                status: form.status,
               }
             : location,
         ),
@@ -447,8 +466,12 @@ export function LocationsScreen() {
       setLocations((current) => [
         {
           id: nextId,
-          ...form,
-          capacity: parsedCapacity,
+          name: form.name.trim(),
+          type: form.type,
+          address: form.address.trim(),
+          manager: form.manager.trim(),
+          capacityTotal: parsedCapacity,
+          status: form.status,
         },
         ...current,
       ]);
@@ -469,6 +492,23 @@ export function LocationsScreen() {
 
   function handleDelete() {
     if (!deleteTarget) {
+      return;
+    }
+
+    const hasHistory = movements.some(
+      (movement) =>
+        movement.locationId === deleteTarget.id ||
+        movement.fromLocationId === deleteTarget.id ||
+        movement.toLocationId === deleteTarget.id,
+    );
+
+    if (hasHistory) {
+      setToast({
+        id: Date.now(),
+        message: "Essa localização já possui movimentações registradas e não pode ser excluída.",
+        tone: "error",
+      });
+      setDeleteTarget(null);
       return;
     }
 
@@ -503,11 +543,12 @@ export function LocationsScreen() {
         </button>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard title="Total" value={String(metrics.total)} />
         <MetricCard title="Depósitos" value={String(metrics.deposits)} />
         <MetricCard title="Lojas" value={String(metrics.stores)} />
-        <MetricCard title="Capacidade total" value={formatCapacity(metrics.totalCapacity)} />
+        <MetricCard title="Capacidade total" value={formatUnits(metrics.totalCapacity)} />
+        <MetricCard title="Disponível" value={formatUnits(metrics.totalAvailable)} />
       </div>
 
       <div className="mt-6 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 shadow-[0_6px_18px_var(--shadow-color)]">
@@ -537,11 +578,12 @@ export function LocationsScreen() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2 xl:max-w-5xl">
+      <div className="mt-6 grid gap-4 lg:grid-cols-2 xl:max-w-6xl">
         {filteredLocations.map((location) => (
           <LocationCard
             key={location.id}
             location={location}
+            movements={movements}
             onEdit={() => openEditModal(location)}
             onDelete={() => confirmDelete(location)}
           />
@@ -573,7 +615,7 @@ export function LocationsScreen() {
                   {isEditing ? "Editar localização" : "Nova localização"}
                 </h2>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                  Preencha os dados da unidade para manter o estoque organizado.
+                  Cadastre os dados do local e defina a capacidade máxima disponível para estoque.
                 </p>
               </div>
 
