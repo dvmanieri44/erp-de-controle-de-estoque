@@ -266,7 +266,7 @@ export function LocationsScreen() {
     } catch {
       setToast({
         id: Date.now(),
-        message: "Nao foi possivel carregar as localizacoes salvas.",
+        message: "Não foi possível carregar as localizações salvas.",
         tone: "error",
       });
     }
@@ -388,25 +388,25 @@ export function LocationsScreen() {
     const parsedCapacity = parseCapacity(values.capacity);
 
     if (!values.name.trim()) {
-      nextErrors.name = "Informe o nome da localizacao.";
+      nextErrors.name = "Informe o nome da localização.";
     } else if (
       locations.some((location) => normalizeText(location.name) === normalizedName && location.id !== editingId)
     ) {
-      nextErrors.name = "Ja existe uma localizacao com esse nome.";
+      nextErrors.name = "Já existe uma localização com esse nome.";
     }
 
     if (!values.address.trim()) {
-      nextErrors.address = "Informe o endereco da localizacao.";
+      nextErrors.address = "Informe o endereço da localização.";
     }
 
     if (!values.manager.trim()) {
-      nextErrors.manager = "Informe o gerente responsavel.";
+      nextErrors.manager = "Informe o gerente responsável.";
     }
 
     if (!values.capacity.trim()) {
-      nextErrors.capacity = "Informe a capacidade maxima.";
+      nextErrors.capacity = "Informe a capacidade máxima.";
     } else if (!Number.isFinite(parsedCapacity) || parsedCapacity <= 0) {
-      nextErrors.capacity = "Use apenas numeros e informe um valor maior que zero.";
+      nextErrors.capacity = "Use apenas números e informe um valor maior que zero.";
     }
 
     return nextErrors;
@@ -437,7 +437,7 @@ export function LocationsScreen() {
 
       setToast({
         id: Date.now(),
-        message: "Localizacao atualizada com sucesso.",
+        message: "Localização atualizada com sucesso.",
         tone: "success",
       });
     } else {
@@ -455,7 +455,7 @@ export function LocationsScreen() {
 
       setToast({
         id: Date.now(),
-        message: "Localizacao cadastrada com sucesso.",
+        message: "Localização cadastrada com sucesso.",
         tone: "success",
       });
     }
@@ -475,7 +475,7 @@ export function LocationsScreen() {
     setLocations((current) => current.filter((location) => location.id !== deleteTarget.id));
     setToast({
       id: Date.now(),
-      message: "Localizacao excluida com sucesso.",
+      message: "Localização excluída com sucesso.",
       tone: "success",
     });
     setDeleteTarget(null);
@@ -487,8 +487,8 @@ export function LocationsScreen() {
 
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <header>
-          <h1 className="text-[30px] font-semibold tracking-[-0.02em] text-[var(--navy-900)]">Localizacoes</h1>
-          <p className="mt-1 text-sm text-[var(--muted-foreground)]">Gerencie depositos, lojas e armazens</p>
+          <h1 className="text-[30px] font-semibold tracking-[-0.02em] text-[var(--navy-900)]">Localizações</h1>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">Gerencie depósitos, lojas e armazéns</p>
         </header>
 
         <button
@@ -499,24 +499,24 @@ export function LocationsScreen() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          Nova localizacao
+          Nova localização
         </button>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Total" value={String(metrics.total)} />
-        <MetricCard title="Depositos" value={String(metrics.deposits)} />
+        <MetricCard title="Depósitos" value={String(metrics.deposits)} />
         <MetricCard title="Lojas" value={String(metrics.stores)} />
         <MetricCard title="Capacidade total" value={formatCapacity(metrics.totalCapacity)} />
       </div>
 
       <div className="mt-6 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 shadow-[0_6px_18px_var(--shadow-color)]">
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-          <Field label="Buscar localizacao">
+          <Field label="Buscar localização">
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Nome, gerente, endereco ou status"
+              placeholder="Nome, gerente, endereço ou status"
               className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
             />
           </Field>
@@ -550,9 +550,9 @@ export function LocationsScreen() {
 
       {filteredLocations.length === 0 ? (
         <div className="mt-6 max-w-5xl rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel)] px-5 py-10 text-center">
-          <p className="text-sm font-medium text-[var(--foreground)]">Nenhuma localizacao encontrada</p>
+          <p className="text-sm font-medium text-[var(--foreground)]">Nenhuma localização encontrada</p>
           <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-            Ajuste a busca, altere o filtro ou cadastre uma nova localizacao.
+            Ajuste a busca, altere o filtro ou cadastre uma nova localização.
           </p>
         </div>
       ) : null}
@@ -570,7 +570,7 @@ export function LocationsScreen() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-[var(--navy-900)]">
-                  {isEditing ? "Editar localizacao" : "Nova localizacao"}
+                  {isEditing ? "Editar localização" : "Nova localização"}
                 </h2>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
                   Preencha os dados da unidade para manter o estoque organizado.
@@ -581,7 +581,7 @@ export function LocationsScreen() {
                 type="button"
                 onClick={closeModal}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--panel-border)] text-[var(--muted-foreground)] transition hover:bg-[var(--panel-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
-                aria-label="Fechar formulario"
+                aria-label="Fechar formulário"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
                   <path d="M6 6l12 12M18 6 6 18" />
@@ -590,12 +590,12 @@ export function LocationsScreen() {
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <Field label="Nome da localizacao" error={errors.name}>
+              <Field label="Nome da localização" error={errors.name}>
                 <input
                   ref={firstFieldRef}
                   value={form.name}
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Ex.: Deposito Zona Norte"
+                  placeholder="Ex.: Depósito Zona Norte"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
@@ -614,16 +614,16 @@ export function LocationsScreen() {
                 </select>
               </Field>
 
-              <Field label="Gerente responsavel" error={errors.manager}>
+              <Field label="Gerente responsável" error={errors.manager}>
                 <input
                   value={form.manager}
                   onChange={(event) => setForm((current) => ({ ...current, manager: event.target.value }))}
-                  placeholder="Nome do responsavel"
+                  placeholder="Nome do responsável"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
 
-              <Field label="Capacidade maxima" error={errors.capacity}>
+              <Field label="Capacidade máxima" error={errors.capacity}>
                 <input
                   value={form.capacity}
                   onChange={(event) =>
@@ -652,11 +652,11 @@ export function LocationsScreen() {
               </Field>
 
               <div className="md:col-span-2">
-                <Field label="Endereco" error={errors.address}>
+                <Field label="Endereço" error={errors.address}>
                   <input
                     value={form.address}
                     onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
-                    placeholder="Rua, numero, cidade"
+                    placeholder="Rua, número, cidade"
                     className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                   />
                 </Field>
@@ -676,7 +676,7 @@ export function LocationsScreen() {
                 onClick={handleSubmit}
                 className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:opacity-95"
               >
-                {isEditing ? "Salvar alteracoes" : "Cadastrar localizacao"}
+                {isEditing ? "Salvar alterações" : "Cadastrar localização"}
               </button>
             </div>
           </div>
@@ -693,9 +693,9 @@ export function LocationsScreen() {
           }}
         >
           <div className="w-full max-w-md rounded-3xl border border-[var(--panel-border)] bg-[var(--panel)] p-5 shadow-[0_20px_50px_rgba(0,0,0,0.28)]">
-            <h2 className="text-lg font-semibold text-[var(--navy-900)]">Excluir localizacao?</h2>
+            <h2 className="text-lg font-semibold text-[var(--navy-900)]">Excluir localização?</h2>
             <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-              A localizacao <span className="font-semibold text-[var(--foreground)]">{deleteTarget.name}</span> sera
+              A localização <span className="font-semibold text-[var(--foreground)]">{deleteTarget.name}</span> será
               removida da lista.
             </p>
 
