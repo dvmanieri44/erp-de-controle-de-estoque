@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 
+import { IndustrialDashboardScreen } from "@/components/dashboard/IndustrialDashboardScreen";
 import { LocationsScreen } from "@/components/dashboard/LocationsScreen";
 import { MovementsScreen } from "@/components/dashboard/MovementsScreen";
-import { SectionScreen } from "@/components/dashboard/SectionScreen";
+import { OperationsModuleScreen } from "@/components/dashboard/OperationsModuleScreen";
 import { SettingsScreen } from "@/components/dashboard/SettingsScreen";
 import { TransfersScreen } from "@/components/dashboard/TransfersScreen";
 import { getSectionById } from "@/lib/dashboard-sections";
@@ -25,6 +26,10 @@ export default async function DashboardSectionPage({ params }: DashboardSectionP
     return <SettingsScreen />;
   }
 
+  if (section.id === "dashboard") {
+    return <IndustrialDashboardScreen />;
+  }
+
   if (section.id === "localizacoes") {
     return <LocationsScreen />;
   }
@@ -37,5 +42,5 @@ export default async function DashboardSectionPage({ params }: DashboardSectionP
     return <TransfersScreen />;
   }
 
-  return <SectionScreen section={section} />;
+  return <OperationsModuleScreen section={section} />;
 }

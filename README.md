@@ -1,13 +1,25 @@
-# GoodStock
+# PremieRpet Operations
 
-Dashboard ERP em Next.js com menu lateral para:
-- Dashboard
+ERP em Next.js pensado para a operação industrial e logística da PremieRpet, com foco em:
+- controle de estoque por localizações
+- movimentações de entrada, saída e ajuste
+- transferências entre fábrica, expedição e centros de distribuição
+- lotes, rastreabilidade e acompanhamento operacional
+
+## Módulos atuais
+
+- Painel industrial
 - Produtos
-- Entradas
-- Saidas
+- Movimentações
+- Estoque baixo
 - Lotes
-- Movimentacoes
-- Relatorios
+- Fornecedores
+- Categorias
+- Localizações
+- Transferências
+- Relatórios
+- Histórico
+- Configurações
 
 ## Rodando localmente
 
@@ -18,7 +30,7 @@ npm.cmd run dev
 
 Acesse: [http://localhost:3000](http://localhost:3000)
 
-## Qualidade de codigo
+## Qualidade de código
 
 ```bash
 npm.cmd run quality:check

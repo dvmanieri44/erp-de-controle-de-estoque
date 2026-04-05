@@ -986,7 +986,7 @@ export function MovementsScreen() {
                   ref={firstFieldRef}
                   value={form.product}
                   onChange={(event) => setForm((current) => ({ ...current, product: event.target.value }))}
-                  placeholder="Ex.: Notebook Dell Inspiron 15"
+                  placeholder="Ex.: GoldeN Formula Gatos Castrados"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
@@ -1017,7 +1017,7 @@ export function MovementsScreen() {
                     setForm((current) => ({ ...current, quantity: event.target.value.replace(/[^\d]/g, "") }))
                   }
                   inputMode="numeric"
-                  placeholder="Ex.: 20"
+                  placeholder="Ex.: 180"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
@@ -1026,7 +1026,7 @@ export function MovementsScreen() {
                 <input
                   value={form.user}
                   onChange={(event) => setForm((current) => ({ ...current, user: event.target.value }))}
-                  placeholder="Ex.: João Silva"
+                  placeholder="Ex.: Equipe de Logística"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
@@ -1140,7 +1140,13 @@ export function MovementsScreen() {
                   <input
                     value={form.reason}
                     onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
-                    placeholder={form.type === "entrada" ? "Ex.: Compra de estoque" : form.type === "saida" ? "Ex.: Venda" : "Ex.: Rebalanceamento interno"}
+                    placeholder={
+                      form.type === "entrada"
+                        ? "Ex.: Produção liberada para estoque"
+                        : form.type === "saida"
+                          ? "Ex.: Expedição para distribuidor"
+                          : "Ex.: Rebalanceamento entre áreas"
+                    }
                     className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                   />
                 </Field>

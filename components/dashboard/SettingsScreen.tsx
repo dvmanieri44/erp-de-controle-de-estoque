@@ -38,27 +38,27 @@ const NOTIFICATION_OPTIONS = [
 
 const HELP_TOPICS = [
   {
-    title: "Como cadastrar um novo produto?",
-    description: "Acesse Produtos, clique em novo cadastro e preencha nome, categoria, lote e quantidade inicial.",
+    title: "Como registrar um novo lote?",
+    description: "Acesse Produtos ou Lotes, informe a linha PremieRpet, o código do lote e a quantidade inicial produzida.",
   },
   {
-    title: "Como acompanhar estoque baixo?",
-    description: "Use a seção Estoque Baixo no menu para visualizar itens com reposição recomendada.",
+    title: "Como acompanhar estoque crítico?",
+    description: "Use a seção Estoque Baixo para acompanhar rupturas em CDs, expedição e áreas com necessidade de reposição.",
   },
   {
-    title: "Onde vejo transferências e histórico?",
-    description: "As movimentações ficam em Transferências, Histórico e na área de Analytics do painel.",
+    title: "Onde acompanho transferências entre fábrica e CDs?",
+    description: "As movimentações operacionais ficam em Transferências e Histórico, com rastreio entre Dourado, expedição e centros de distribuição.",
   },
 ] as const;
 
 const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
-  companyName: "Minha Empresa",
-  legalName: "Minha Empresa LTDA",
+  companyName: "PremieRpet",
+  legalName: "Premier Pet Ltda.",
   taxId: "00.000.000/0001-00",
-  email: "contato@empresa.com",
-  phone: "(11) 99999-9999",
-  whatsapp: "(11) 99999-9999",
-  address: "Rua Principal, 123",
+  email: "operacoes@premierpet.com.br",
+  phone: "(16) 3366-0000",
+  whatsapp: "(16) 99666-0000",
+  address: "Complexo Industrial Dourado, SP",
 };
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -448,16 +448,16 @@ export function SettingsScreen() {
                 </p>
                 <p className="mt-2 text-sm font-medium text-[var(--foreground)]">{savedSettings?.company.email ?? formState.company.email}</p>
                 <p className="mt-1 text-xs text-[var(--muted-foreground)]">{savedSettings?.company.whatsapp ?? formState.company.whatsapp}</p>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Seg a sex, das 8h às 18h</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Suporte operacional em dias úteis, das 8h às 18h</p>
               </div>
 
               <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-3 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
                   Documentação
                 </p>
-                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">Guia rápido do sistema</p>
+                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">Guia operacional PremieRpet</p>
                 <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Acesse tutoriais, boas práticas e instruções de uso.
+                  Acesse padrões de movimentação, boas práticas de armazenagem e instruções de uso.
                 </p>
               </div>
             </div>

@@ -6,18 +6,18 @@ type SectionScreenProps = {
 };
 
 const SECTION_METRICS = [
-  { title: "Itens ativos", value: "1.284", helper: "Atualizado ha 5 minutos" },
-  { title: "Baixo estoque", value: "37", helper: "Recomenda reposicao imediata" },
-  { title: "Movimentacoes hoje", value: "219", helper: "Entradas e saidas consolidadas" },
+  { title: "Lotes monitorados", value: "186", helper: "Rastreabilidade ativa entre fábrica, quality hold e CD" },
+  { title: "Cobertura crítica", value: "12", helper: "SKUs com cobertura abaixo do alvo comercial" },
+  { title: "Transferências no dia", value: "28", helper: "Fluxos internos entre Dourado, expedição e distribuição" },
 ];
 
 export function SectionScreen({ section }: SectionScreenProps) {
   return (
     <section className="space-y-8">
       <header className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] px-6 py-8 transition-colors">
-        <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">GoodStock</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">PremieRpet Operations</p>
         <h2 className="mt-3 text-3xl font-bold text-[var(--navy-900)]">{section.label}</h2>
-        <p className="mt-2 max-w-2xl text-sm text-[var(--muted-foreground)]">{section.description}</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted-foreground)]">{section.description}</p>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

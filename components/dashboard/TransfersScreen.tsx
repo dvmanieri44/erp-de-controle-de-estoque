@@ -955,7 +955,7 @@ export function TransfersScreen() {
                   ref={firstFieldRef}
                   value={form.product}
                   onChange={(event) => setForm((current) => ({ ...current, product: event.target.value }))}
-                  placeholder="Ex.: Teclado Mecânico Keychron K2"
+                  placeholder="Ex.: PremieR Formula Cães Adultos"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
@@ -967,7 +967,7 @@ export function TransfersScreen() {
                     setForm((current) => ({ ...current, quantity: event.target.value.replace(/[^\d]/g, "") }))
                   }
                   inputMode="numeric"
-                  placeholder="Ex.: 15"
+                  placeholder="Ex.: 120"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
@@ -1006,7 +1006,7 @@ export function TransfersScreen() {
                 <input
                   value={form.user}
                   onChange={(event) => setForm((current) => ({ ...current, user: event.target.value }))}
-                  placeholder="Ex.: João Silva"
+                  placeholder="Ex.: Equipe de Supply"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
@@ -1044,7 +1044,7 @@ export function TransfersScreen() {
                   <input
                     value={form.reason}
                     onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
-                    placeholder="Ex.: Reposição da loja centro"
+                    placeholder="Ex.: Abastecimento do CD Sudeste"
                     className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                   />
                 </Field>

@@ -41,7 +41,7 @@ type FormErrors = Partial<Record<keyof LocationFormState, string>>;
 
 const EMPTY_FORM: LocationFormState = {
   name: "",
-  type: "Depósito",
+  type: "Fábrica",
   address: "",
   manager: "",
   capacity: "",
@@ -348,15 +348,15 @@ export function LocationsScreen() {
   }, [locations, movements, search, selectedType]);
 
   const metrics = useMemo(() => {
-    const deposits = locations.filter((location) => location.type === "Depósito").length;
-    const stores = locations.filter((location) => location.type === "Loja").length;
+    const factories = locations.filter((location) => location.type === "Fábrica").length;
+    const distributionCenters = locations.filter((location) => location.type === "Centro de Distribuição").length;
     const totalCapacity = locations.reduce((sum, location) => sum + location.capacityTotal, 0);
     const totalUsed = locations.reduce((sum, location) => sum + Math.max(0, getLocationUsedCapacity(location.id, movements)), 0);
 
     return {
       total: locations.length,
-      deposits,
-      stores,
+      factories,
+      distributionCenters,
       totalCapacity,
       totalAvailable: Math.max(0, totalCapacity - totalUsed),
     };
@@ -528,7 +528,9 @@ export function LocationsScreen() {
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <header>
           <h1 className="text-[30px] font-semibold tracking-[-0.02em] text-[var(--navy-900)]">Localizações</h1>
-          <p className="mt-1 text-sm text-[var(--muted-foreground)]">Gerencie depósitos, lojas e armazéns</p>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            Gerencie fábrica, centros de distribuição, expedição e áreas de qualidade
+          </p>
         </header>
 
         <button
@@ -545,8 +547,8 @@ export function LocationsScreen() {
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard title="Total" value={String(metrics.total)} />
-        <MetricCard title="Depósitos" value={String(metrics.deposits)} />
-        <MetricCard title="Lojas" value={String(metrics.stores)} />
+        <MetricCard title="Fábricas" value={String(metrics.factories)} />
+        <MetricCard title="CDs" value={String(metrics.distributionCenters)} />
         <MetricCard title="Capacidade total" value={formatUnits(metrics.totalCapacity)} />
         <MetricCard title="Disponível" value={formatUnits(metrics.totalAvailable)} />
       </div>
@@ -615,7 +617,7 @@ export function LocationsScreen() {
                   {isEditing ? "Editar localização" : "Nova localização"}
                 </h2>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                  Cadastre os dados do local e defina a capacidade máxima disponível para estoque.
+                  Cadastre os dados da área e defina a capacidade máxima disponível para armazenagem.
                 </p>
               </div>
 
@@ -637,7 +639,7 @@ export function LocationsScreen() {
                   ref={firstFieldRef}
                   value={form.name}
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Ex.: Depósito Zona Norte"
+                  placeholder="Ex.: CD Sudeste ou Expedição Dourado"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
@@ -660,7 +662,7 @@ export function LocationsScreen() {
                 <input
                   value={form.manager}
                   onChange={(event) => setForm((current) => ({ ...current, manager: event.target.value }))}
-                  placeholder="Nome do responsável"
+                  placeholder="Nome do líder da área"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
@@ -698,7 +700,7 @@ export function LocationsScreen() {
                   <input
                     value={form.address}
                     onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
-                    placeholder="Rua, número, cidade"
+                    placeholder="Unidade, setor ou endereço logístico"
                     className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                   />
                 </Field>

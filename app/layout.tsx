@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GoodStock",
-  description: "ERP de controle de estoque GoodStock",
+  title: "PremieRpet Operations",
+  description: "ERP industrial de estoque, logística interna e rastreabilidade da PremieRpet",
 };
 
 export default function RootLayout({

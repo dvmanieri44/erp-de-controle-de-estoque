@@ -1,4 +1,4 @@
-export type LocationType = "Depósito" | "Loja" | "Armazém";
+export type LocationType = "Fábrica" | "Centro de Distribuição" | "Expedição" | "Qualidade";
 export type LocationStatus = "Ativa" | "Inativa" | "Em manutenção";
 export type MovementType = "entrada" | "saida" | "transferencia";
 export type MovementStatus = "concluida" | "cancelada";
@@ -41,28 +41,123 @@ export const MOVEMENTS_STORAGE_KEY = "erp.movements";
 
 export const INITIAL_LOCATIONS: LocationItem[] = [
   {
-    id: "deposito-principal",
-    name: "Depósito Principal",
-    type: "Depósito",
-    address: "Rua Central, 100 - São Paulo",
-    manager: "Roberto Lima",
-    capacityTotal: 10000,
+    id: "complexo-industrial-dourado",
+    name: "Complexo Industrial Dourado",
+    type: "Fábrica",
+    address: "Dourado - SP",
+    manager: "Marina Azevedo",
+    capacityTotal: 280000,
     status: "Ativa",
   },
   {
-    id: "loja-centro",
-    name: "Loja Centro",
-    type: "Loja",
-    address: "Av. Paulista, 500 - São Paulo",
-    manager: "Maria Costa",
-    capacityTotal: 2000,
+    id: "cd-sudeste",
+    name: "CD Sudeste",
+    type: "Centro de Distribuição",
+    address: "Jundiaí - SP",
+    manager: "Carlos Menezes",
+    capacityTotal: 180000,
+    status: "Ativa",
+  },
+  {
+    id: "expedicao-dourado",
+    name: "Expedição Dourado",
+    type: "Expedição",
+    address: "Dourado - SP",
+    manager: "Fernanda Rocha",
+    capacityTotal: 52000,
+    status: "Ativa",
+  },
+  {
+    id: "quality-hold",
+    name: "Quality Hold",
+    type: "Qualidade",
+    address: "Dourado - SP",
+    manager: "Luciana Prado",
+    capacityTotal: 24000,
     status: "Ativa",
   },
 ] as const;
 
-export const INITIAL_MOVEMENTS: MovementItem[] = [];
+export const INITIAL_MOVEMENTS: MovementItem[] = [
+  {
+    id: "mov-seco-premier-porte-mini",
+    product: "PremieR Formula Cães Adultos Porte Mini",
+    type: "entrada",
+    quantity: 36000,
+    reason: "Produção liberada pela qualidade",
+    user: "Ana Ribeiro",
+    createdAt: "2026-03-27T09:20:00.000Z",
+    locationId: "complexo-industrial-dourado",
+    notes: "Lote PFM260327 liberado após análise físico-química.",
+    status: "concluida",
+  },
+  {
+    id: "mov-golden-gatos-castrados",
+    product: "GoldeN Gatos Castrados Salmão",
+    type: "entrada",
+    quantity: 22000,
+    reason: "Produção concluída",
+    user: "Rafael Monteiro",
+    createdAt: "2026-03-28T11:40:00.000Z",
+    locationId: "complexo-industrial-dourado",
+    notes: "Lote GGC280326 com embalagem 10,1 kg.",
+    status: "concluida",
+  },
+  {
+    id: "trf-premier-formula-cd",
+    product: "PremieR Formula Cães Adultos Porte Mini",
+    type: "transferencia",
+    quantity: 12000,
+    reason: "Abastecimento do CD Sudeste",
+    user: "Joana Martins",
+    createdAt: "2026-03-29T13:10:00.000Z",
+    fromLocationId: "complexo-industrial-dourado",
+    toLocationId: "cd-sudeste",
+    notes: "Transferência programada para pedidos do canal especializado.",
+    priority: "alta",
+    transferStatus: "recebida",
+    code: "TRF-20260329-131000",
+    receivedAt: "2026-03-30T09:15:00.000Z",
+  },
+  {
+    id: "mov-golden-expedicao",
+    product: "GoldeN Gatos Castrados Salmão",
+    type: "transferencia",
+    quantity: 8000,
+    reason: "Separação para expedição nacional",
+    user: "Diego Paiva",
+    createdAt: "2026-03-30T16:00:00.000Z",
+    fromLocationId: "complexo-industrial-dourado",
+    toLocationId: "expedicao-dourado",
+    notes: "Janela de carregamento da operação Sul e Sudeste.",
+    priority: "media",
+    transferStatus: "em_transito",
+    code: "TRF-20260330-160000",
+  },
+  {
+    id: "mov-quality-hold",
+    product: "PremieR Formula Filhotes Frango",
+    type: "transferencia",
+    quantity: 3500,
+    reason: "Retenção preventiva para reanálise",
+    user: "Tatiane Freitas",
+    createdAt: "2026-03-31T08:05:00.000Z",
+    fromLocationId: "complexo-industrial-dourado",
+    toLocationId: "quality-hold",
+    notes: "Aguardar parecer do laboratório interno.",
+    priority: "alta",
+    transferStatus: "em_separacao",
+    code: "TRF-20260331-080500",
+  },
+] as const;
 
-export const LOCATION_TYPES: Array<LocationType | "Todos"> = ["Todos", "Depósito", "Loja", "Armazém"];
+export const LOCATION_TYPES: Array<LocationType | "Todos"> = [
+  "Todos",
+  "Fábrica",
+  "Centro de Distribuição",
+  "Expedição",
+  "Qualidade",
+];
 export const LOCATION_STATUS: LocationStatus[] = ["Ativa", "Inativa", "Em manutenção"];
 export const MOVEMENT_TYPES: Array<{ value: MovementType | "todos"; label: string }> = [
   { value: "todos", label: "Todas" },
@@ -186,7 +281,7 @@ function isLocationStatus(value: unknown): value is LocationStatus {
 }
 
 function isLocationType(value: unknown): value is LocationType {
-  return value === "Depósito" || value === "Loja" || value === "Armazém";
+  return value === "Fábrica" || value === "Centro de Distribuição" || value === "Expedição" || value === "Qualidade";
 }
 
 function isMovementType(value: unknown): value is MovementType {
