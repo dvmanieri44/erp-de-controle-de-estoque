@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useLocale } from "@/components/providers/LocaleProvider";
 import type { DashboardSection } from "@/lib/dashboard-sections";
+import { getSectionById } from "@/lib/dashboard-sections";
 import {
   CALENDAR_EVENTS,
   CATEGORIES,
@@ -39,14 +41,17 @@ function Hero({
   eyebrow: string;
   actions?: React.ReactNode;
 }) {
+  const { locale } = useLocale();
+  const localizedSection = getSectionById(section.id, locale) ?? section;
+
   return (
     <header className="overflow-hidden rounded-[32px] border border-[var(--panel-border)] bg-[var(--panel)] shadow-[0_14px_32px_var(--shadow-color)]">
       <div className="bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.14),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.02),transparent_65%)] px-6 py-7 md:px-8 md:py-8">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--muted-foreground)]">{eyebrow}</p>
-            <h1 className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-[var(--navy-900)]">{section.label}</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--muted-foreground)]">{section.description}</p>
+            <h1 className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-[var(--navy-900)]">{localizedSection.label}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--muted-foreground)]">{localizedSection.description}</p>
           </div>
           {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
         </div>
@@ -204,7 +209,7 @@ function useInventoryData() {
   return { locations, movements };
 }
 
-function ProductsModule(section: DashboardSection) {
+function ProductsModule({ section }: { section: DashboardSection }) {
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -274,7 +279,7 @@ function ProductsModule(section: DashboardSection) {
   );
 }
 
-function LowStockModule(section: DashboardSection) {
+function LowStockModule({ section }: { section: DashboardSection }) {
   const criticalItems = PRODUCT_LINES.filter((item) => item.status !== "Estável");
 
   return (
@@ -341,7 +346,7 @@ function LowStockModule(section: DashboardSection) {
   );
 }
 
-function LotsModule(section: DashboardSection) {
+function LotsModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Rastreabilidade" actions={<ActionButton tone="primary">Novo Lote</ActionButton>} />
@@ -369,7 +374,7 @@ function LotsModule(section: DashboardSection) {
   );
 }
 
-function SuppliersModule(section: DashboardSection) {
+function SuppliersModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Suprimentos" actions={<ActionButton tone="primary">Novo Fornecedor</ActionButton>} />
@@ -409,7 +414,7 @@ function SuppliersModule(section: DashboardSection) {
   );
 }
 
-function CategoriesModule(section: DashboardSection) {
+function CategoriesModule({ section }: { section: DashboardSection }) {
   const tones = [
     "bg-blue-50 text-blue-600",
     "bg-emerald-50 text-emerald-600",
@@ -444,7 +449,7 @@ function CategoriesModule(section: DashboardSection) {
   );
 }
 
-function HistoryModule(section: DashboardSection) {
+function HistoryModule({ section }: { section: DashboardSection }) {
   const { locations, movements } = useInventoryData();
   const [query, setQuery] = useState("");
   const totalUsed = locations.reduce((sum, location) => sum + Math.max(0, getLocationUsedCapacity(location.id, movements)), 0);
@@ -503,7 +508,7 @@ function HistoryModule(section: DashboardSection) {
   );
 }
 
-function QualityModule(section: DashboardSection) {
+function QualityModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Quality" />
@@ -536,7 +541,7 @@ function QualityModule(section: DashboardSection) {
   );
 }
 
-function PlanningModule(section: DashboardSection) {
+function PlanningModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Planejamento" />
@@ -569,7 +574,7 @@ function PlanningModule(section: DashboardSection) {
   );
 }
 
-function ReportsModule(section: DashboardSection) {
+function ReportsModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero
@@ -604,7 +609,7 @@ function ReportsModule(section: DashboardSection) {
   );
 }
 
-function NotificationsModule(section: DashboardSection) {
+function NotificationsModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Central" actions={<ActionButton>Marcar tudo como lido</ActionButton>} />
@@ -639,7 +644,7 @@ function NotificationsModule(section: DashboardSection) {
   );
 }
 
-function PendingModule(section: DashboardSection) {
+function PendingModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Execução" />
@@ -666,7 +671,7 @@ function PendingModule(section: DashboardSection) {
   );
 }
 
-function TasksModule(section: DashboardSection) {
+function TasksModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Execução" />
@@ -706,7 +711,7 @@ function TasksModule(section: DashboardSection) {
   );
 }
 
-function DistributorsModule(section: DashboardSection) {
+function DistributorsModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Clientes" />
@@ -727,7 +732,7 @@ function DistributorsModule(section: DashboardSection) {
   );
 }
 
-function CalendarModule(section: DashboardSection) {
+function CalendarModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Agenda" />
@@ -753,7 +758,7 @@ function CalendarModule(section: DashboardSection) {
   );
 }
 
-function IncidentsModule(section: DashboardSection) {
+function IncidentsModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Ocorrências" />
@@ -786,7 +791,7 @@ function IncidentsModule(section: DashboardSection) {
   );
 }
 
-function DocumentsModule(section: DashboardSection) {
+function DocumentsModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
       <Hero section={section} eyebrow="Documentação" />

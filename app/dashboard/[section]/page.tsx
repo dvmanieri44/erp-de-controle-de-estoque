@@ -4,6 +4,7 @@ import { IndustrialDashboardScreen } from "@/components/dashboard/IndustrialDash
 import { LocationsScreen } from "@/components/dashboard/LocationsScreen";
 import { MovementsScreen } from "@/components/dashboard/MovementsScreen";
 import { OperationsModuleScreen } from "@/components/dashboard/OperationsModuleScreen";
+import { RoadmapScreen } from "@/components/dashboard/RoadmapScreen";
 import { SettingsScreen } from "@/components/dashboard/SettingsScreen";
 import { TransfersScreen } from "@/components/dashboard/TransfersScreen";
 import { getSectionById } from "@/lib/dashboard-sections";
@@ -40,6 +41,10 @@ export default async function DashboardSectionPage({ params }: DashboardSectionP
 
   if (section.id === "transferencias") {
     return <TransfersScreen />;
+  }
+
+  if (section.id === "roadmap") {
+    return <RoadmapScreen section={section} />;
   }
 
   return <OperationsModuleScreen section={section} />;

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { DASHBOARD_SECTIONS } from "@/lib/dashboard-sections";
+import { useLocale } from "@/components/providers/LocaleProvider";
+import { getDashboardSections } from "@/lib/dashboard-sections";
 import { LOTS, NOTIFICATIONS, PRODUCT_LINES } from "@/lib/operations-data";
 import { loadLocations, loadMovements } from "@/lib/inventory";
 
@@ -13,6 +14,45 @@ type SearchItem = {
   subtitle: string;
   href: string;
 };
+
+const COPY = {
+  "pt-BR": {
+    sectionSubtitle: "Módulo do sistema",
+    searchPrompt: "Buscar por módulo, SKU, lote ou item operacional",
+    searchPlaceholder: "Buscar módulos, SKUs, lotes e itens",
+    alerts: "Alertas",
+    openAlerts: "em aberto",
+    base: "Base",
+    baseSummary: "{locations} localizações · {movements} eventos",
+    environment: "Ambiente",
+    demoMode: "Modo demo operacional",
+    noResults: "Nenhum item encontrado para essa busca.",
+  },
+  "en-US": {
+    sectionSubtitle: "System module",
+    searchPrompt: "Search by module, SKU, lot or operational item",
+    searchPlaceholder: "Search modules, SKUs, lots and items",
+    alerts: "Alerts",
+    openAlerts: "open",
+    base: "Base",
+    baseSummary: "{locations} locations · {movements} events",
+    environment: "Environment",
+    demoMode: "Operational demo mode",
+    noResults: "No items found for this search.",
+  },
+  "es-ES": {
+    sectionSubtitle: "Módulo del sistema",
+    searchPrompt: "Buscar por módulo, SKU, lote o ítem operativo",
+    searchPlaceholder: "Buscar módulos, SKUs, lotes e ítems",
+    alerts: "Alertas",
+    openAlerts: "abiertas",
+    base: "Base",
+    baseSummary: "{locations} ubicaciones · {movements} eventos",
+    environment: "Entorno",
+    demoMode: "Modo demo operativo",
+    noResults: "No se encontró ningún elemento para esta búsqueda.",
+  },
+} as const;
 
 function SearchIcon() {
   return (
@@ -24,6 +64,8 @@ function SearchIcon() {
 }
 
 export function WorkbenchBar() {
+  const { locale } = useLocale();
+  const copy = COPY[locale];
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [locationsCount, setLocationsCount] = useState(0);
@@ -53,10 +95,10 @@ export function WorkbenchBar() {
   }, []);
 
   const items = useMemo<SearchItem[]>(() => {
-    const sections = DASHBOARD_SECTIONS.map((section) => ({
+    const sections = getDashboardSections(locale).map((section) => ({
       id: `section-${section.id}`,
       title: section.label,
-      subtitle: "Módulo do sistema",
+      subtitle: copy.sectionSubtitle,
       href: section.id === "dashboard" ? "/dashboard" : `/dashboard/${section.id}`,
     }));
 
@@ -75,7 +117,7 @@ export function WorkbenchBar() {
     }));
 
     return [...sections, ...products, ...lots];
-  }, []);
+  }, [copy.sectionSubtitle, locale]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -97,7 +139,7 @@ export function WorkbenchBar() {
           className="flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-4 py-3 text-left text-sm text-[var(--muted-foreground)] transition hover:bg-[var(--panel)] md:min-w-[360px]"
         >
           <SearchIcon />
-          <span className="truncate">Buscar por módulo, SKU, lote ou item operacional</span>
+          <span className="truncate">{copy.searchPrompt}</span>
           <span className="ml-auto rounded-lg bg-[var(--panel)] px-2 py-1 text-[11px] font-semibold text-[var(--muted-foreground)]">
             Ctrl K
           </span>
@@ -105,16 +147,18 @@ export function WorkbenchBar() {
 
         <div className="flex flex-wrap gap-3">
           <div className="rounded-2xl bg-[var(--panel-soft)] px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Alertas</p>
-            <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">{NOTIFICATIONS.filter((item) => item.status !== "Concluída").length} em aberto</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">{copy.alerts}</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">
+              {NOTIFICATIONS.filter((item) => !item.status.toLowerCase().includes("concl")).length} {copy.openAlerts}
+            </p>
           </div>
           <div className="rounded-2xl bg-[var(--panel-soft)] px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Base</p>
-            <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">{locationsCount} localizações · {movementsCount} eventos</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">{copy.base}</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">{copy.baseSummary.replace("{locations}", String(locationsCount)).replace("{movements}", String(movementsCount))}</p>
           </div>
           <div className="rounded-2xl bg-[var(--panel-soft)] px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Ambiente</p>
-            <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">Modo demo operacional</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">{copy.environment}</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">{copy.demoMode}</p>
           </div>
         </div>
       </div>
@@ -134,7 +178,7 @@ export function WorkbenchBar() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar módulos, SKUs, lotes e itens"
+                placeholder={copy.searchPlaceholder}
                 className="w-full bg-transparent text-sm text-[var(--foreground)] outline-none"
                 autoFocus
               />
@@ -154,7 +198,7 @@ export function WorkbenchBar() {
               ))}
               {filtered.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-soft)] px-4 py-6 text-sm text-[var(--muted-foreground)]">
-                  Nenhum item encontrado para essa busca.
+                  {copy.noResults}
                 </div>
               ) : null}
             </div>

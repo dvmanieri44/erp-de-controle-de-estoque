@@ -1,3 +1,9 @@
+import {
+  DEFAULT_LANGUAGE_PREFERENCE,
+  loadLanguagePreference,
+  type LanguagePreference,
+} from "@/lib/ui-preferences";
+
 export type LocationType = "Fábrica" | "Centro de Distribuição" | "Expedição" | "Qualidade";
 export type LocationStatus = "Ativa" | "Inativa" | "Em manutenção";
 export type MovementType = "entrada" | "saida" | "transferencia";
@@ -159,30 +165,246 @@ export const LOCATION_TYPES: Array<LocationType | "Todos"> = [
   "Qualidade",
 ];
 export const LOCATION_STATUS: LocationStatus[] = ["Ativa", "Inativa", "Em manutenção"];
-export const MOVEMENT_TYPES: Array<{ value: MovementType | "todos"; label: string }> = [
-  { value: "todos", label: "Todas" },
-  { value: "entrada", label: "Entradas" },
-  { value: "saida", label: "Saídas" },
-  { value: "transferencia", label: "Transferências" },
+const MOVEMENT_TYPE_VALUES: Array<MovementType | "todos"> = ["todos", "entrada", "saida", "transferencia"];
+const DATE_RANGE_VALUES: DateRangeFilter[] = ["all", "today", "7d", "30d"];
+const TRANSFER_STATUS_VALUES: TransferStatus[] = [
+  "solicitada",
+  "em_separacao",
+  "em_transito",
+  "recebida",
+  "cancelada",
 ];
-export const DATE_RANGE_OPTIONS: Array<{ value: DateRangeFilter; label: string }> = [
-  { value: "all", label: "Todo período" },
-  { value: "today", label: "Hoje" },
-  { value: "7d", label: "Últimos 7 dias" },
-  { value: "30d", label: "Últimos 30 dias" },
-];
-export const TRANSFER_STATUS_OPTIONS: Array<{ value: TransferStatus; label: string }> = [
-  { value: "solicitada", label: "Solicitada" },
-  { value: "em_separacao", label: "Em separação" },
-  { value: "em_transito", label: "Em trânsito" },
-  { value: "recebida", label: "Recebida" },
-  { value: "cancelada", label: "Cancelada" },
-];
-export const TRANSFER_PRIORITY_OPTIONS: Array<{ value: TransferPriority; label: string }> = [
-  { value: "baixa", label: "Baixa" },
-  { value: "media", label: "Média" },
-  { value: "alta", label: "Alta" },
-];
+const TRANSFER_PRIORITY_VALUES: TransferPriority[] = ["baixa", "media", "alta"];
+
+type DynamicLabelOption<TValue extends string> = {
+  readonly value: TValue;
+  readonly label: string;
+};
+
+function resolveLanguage(language?: LanguagePreference) {
+  if (language) {
+    return language;
+  }
+
+  return typeof window === "undefined" ? DEFAULT_LANGUAGE_PREFERENCE : loadLanguagePreference();
+}
+
+const LOCATION_TYPE_LABELS: Record<LanguagePreference, Record<LocationType, string>> = {
+  "pt-BR": {
+    "Fábrica": "Fábrica",
+    "Centro de Distribuição": "Centro de Distribuição",
+    "Expedição": "Expedição",
+    "Qualidade": "Qualidade",
+  },
+  "en-US": {
+    "Fábrica": "Factory",
+    "Centro de Distribuição": "Distribution Center",
+    "Expedição": "Shipping",
+    "Qualidade": "Quality",
+  },
+  "es-ES": {
+    "Fábrica": "Fábrica",
+    "Centro de Distribuição": "Centro de Distribución",
+    "Expedição": "Expedición",
+    "Qualidade": "Calidad",
+  },
+};
+
+const LOCATION_STATUS_LABELS: Record<LanguagePreference, Record<LocationStatus, string>> = {
+  "pt-BR": {
+    Ativa: "Ativa",
+    Inativa: "Inativa",
+    "Em manutenção": "Em manutenção",
+  },
+  "en-US": {
+    Ativa: "Active",
+    Inativa: "Inactive",
+    "Em manutenção": "Under maintenance",
+  },
+  "es-ES": {
+    Ativa: "Activa",
+    Inativa: "Inactiva",
+    "Em manutenção": "En mantenimiento",
+  },
+};
+
+const MOVEMENT_TYPE_LABELS: Record<LanguagePreference, Record<MovementType | "todos", string>> = {
+  "pt-BR": {
+    todos: "Todas",
+    entrada: "Entradas",
+    saida: "Saídas",
+    transferencia: "Transferências",
+  },
+  "en-US": {
+    todos: "All",
+    entrada: "Inbound",
+    saida: "Outbound",
+    transferencia: "Transfers",
+  },
+  "es-ES": {
+    todos: "Todas",
+    entrada: "Entradas",
+    saida: "Salidas",
+    transferencia: "Transferencias",
+  },
+};
+
+const DATE_RANGE_LABELS: Record<LanguagePreference, Record<DateRangeFilter, string>> = {
+  "pt-BR": {
+    all: "Todo período",
+    today: "Hoje",
+    "7d": "Últimos 7 dias",
+    "30d": "Últimos 30 dias",
+  },
+  "en-US": {
+    all: "All time",
+    today: "Today",
+    "7d": "Last 7 days",
+    "30d": "Last 30 days",
+  },
+  "es-ES": {
+    all: "Todo el período",
+    today: "Hoy",
+    "7d": "Últimos 7 días",
+    "30d": "Últimos 30 días",
+  },
+};
+
+const TRANSFER_STATUS_LABELS: Record<LanguagePreference, Record<TransferStatus, string>> = {
+  "pt-BR": {
+    solicitada: "Solicitada",
+    em_separacao: "Em separação",
+    em_transito: "Em trânsito",
+    recebida: "Recebida",
+    cancelada: "Cancelada",
+  },
+  "en-US": {
+    solicitada: "Requested",
+    em_separacao: "Picking",
+    em_transito: "In transit",
+    recebida: "Received",
+    cancelada: "Cancelled",
+  },
+  "es-ES": {
+    solicitada: "Solicitada",
+    em_separacao: "En preparación",
+    em_transito: "En tránsito",
+    recebida: "Recibida",
+    cancelada: "Cancelada",
+  },
+};
+
+const TRANSFER_PRIORITY_LABELS: Record<LanguagePreference, Record<TransferPriority, string>> = {
+  "pt-BR": {
+    baixa: "Baixa",
+    media: "Média",
+    alta: "Alta",
+  },
+  "en-US": {
+    baixa: "Low",
+    media: "Medium",
+    alta: "High",
+  },
+  "es-ES": {
+    baixa: "Baja",
+    media: "Media",
+    alta: "Alta",
+  },
+};
+
+const UNIT_LABELS: Record<LanguagePreference, string> = {
+  "pt-BR": "unidades",
+  "en-US": "units",
+  "es-ES": "unidades",
+};
+
+export function getLocationTypeLabel(type: LocationType, language?: LanguagePreference) {
+  return LOCATION_TYPE_LABELS[resolveLanguage(language)][type];
+}
+
+export function getLocationStatusLabel(status: LocationStatus, language?: LanguagePreference) {
+  return LOCATION_STATUS_LABELS[resolveLanguage(language)][status];
+}
+
+export function getLocationTypeOptions(language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
+  return LOCATION_TYPES.map((value) => ({
+    value,
+    label: value === "Todos" ? MOVEMENT_TYPE_LABELS[locale].todos : getLocationTypeLabel(value, locale),
+  }));
+}
+
+export function getLocationStatusOptions(language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
+  return LOCATION_STATUS.map((value) => ({
+    value,
+    label: getLocationStatusLabel(value, locale),
+  }));
+}
+
+export function getMovementTypeLabel(type: MovementType | "todos", language?: LanguagePreference) {
+  return MOVEMENT_TYPE_LABELS[resolveLanguage(language)][type];
+}
+
+export function getMovementTypeOptions(language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
+  return MOVEMENT_TYPE_VALUES.map((value) => ({
+    value,
+    label: getMovementTypeLabel(value, locale),
+  }));
+}
+
+export function getDateRangeOptions(language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
+  return DATE_RANGE_VALUES.map((value) => ({
+    value,
+    label: DATE_RANGE_LABELS[locale][value],
+  }));
+}
+
+export function getTransferStatusOptions(language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
+  return TRANSFER_STATUS_VALUES.map((value) => ({
+    value,
+    label: TRANSFER_STATUS_LABELS[locale][value],
+  }));
+}
+
+export function getTransferPriorityOptions(language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
+  return TRANSFER_PRIORITY_VALUES.map((value) => ({
+    value,
+    label: TRANSFER_PRIORITY_LABELS[locale][value],
+  }));
+}
+
+export const MOVEMENT_TYPES: Array<DynamicLabelOption<MovementType | "todos">> = MOVEMENT_TYPE_VALUES.map((value) => ({
+  value,
+  get label() {
+    return getMovementTypeLabel(value);
+  },
+})) as Array<DynamicLabelOption<MovementType | "todos">>;
+
+export const DATE_RANGE_OPTIONS: Array<DynamicLabelOption<DateRangeFilter>> = DATE_RANGE_VALUES.map((value) => ({
+  value,
+  get label() {
+    return DATE_RANGE_LABELS[resolveLanguage()][value];
+  },
+})) as Array<DynamicLabelOption<DateRangeFilter>>;
+
+export const TRANSFER_STATUS_OPTIONS: Array<DynamicLabelOption<TransferStatus>> = TRANSFER_STATUS_VALUES.map((value) => ({
+  value,
+  get label() {
+    return TRANSFER_STATUS_LABELS[resolveLanguage()][value];
+  },
+})) as Array<DynamicLabelOption<TransferStatus>>;
+
+export const TRANSFER_PRIORITY_OPTIONS: Array<DynamicLabelOption<TransferPriority>> = TRANSFER_PRIORITY_VALUES.map((value) => ({
+  value,
+  get label() {
+    return TRANSFER_PRIORITY_LABELS[resolveLanguage()][value];
+  },
+})) as Array<DynamicLabelOption<TransferPriority>>;
 
 export function createLocationId(value: string) {
   return value
@@ -202,17 +424,19 @@ export function parseCapacity(value: string) {
   return digits ? Number(digits) : NaN;
 }
 
-export function formatUnits(value: number) {
-  return `${new Intl.NumberFormat("pt-BR").format(value)} unidades`;
+export function formatUnits(value: number, language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
+  return `${new Intl.NumberFormat(locale).format(value)} ${UNIT_LABELS[locale]}`;
 }
 
-export function formatSignedUnits(value: number) {
+export function formatSignedUnits(value: number, language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
   const sign = value > 0 ? "+" : "";
-  return `${sign}${new Intl.NumberFormat("pt-BR").format(value)}`;
+  return `${sign}${new Intl.NumberFormat(locale).format(value)}`;
 }
 
-export function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
+export function formatDateTime(value: string, language?: LanguagePreference) {
+  return new Intl.DateTimeFormat(resolveLanguage(language), {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
@@ -224,24 +448,29 @@ export function buildTransferCode(date = new Date()) {
   return `TRF-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }
 
-export function getMovementStatusLabel(movement: MovementItem) {
-  if (movement.type === "transferencia") {
-    const transferStatus = movement.transferStatus ?? "recebida";
+export function getMovementStatusLabel(movement: MovementItem, language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
 
-    if (transferStatus === "solicitada") return "Solicitada";
-    if (transferStatus === "em_separacao") return "Em separação";
-    if (transferStatus === "em_transito") return "Em trânsito";
-    if (transferStatus === "cancelada") return "Cancelada";
-    return "Recebida";
+  if (movement.type === "transferencia") {
+    return TRANSFER_STATUS_LABELS[locale][movement.transferStatus ?? "recebida"];
   }
 
-  return movement.status === "cancelada" ? "Cancelada" : "Concluída";
+  const cancelledLabels: Record<LanguagePreference, string> = {
+    "pt-BR": "Cancelada",
+    "en-US": "Cancelled",
+    "es-ES": "Cancelada",
+  };
+  const completedLabels: Record<LanguagePreference, string> = {
+    "pt-BR": "Concluída",
+    "en-US": "Completed",
+    "es-ES": "Completada",
+  };
+
+  return movement.status === "cancelada" ? cancelledLabels[locale] : completedLabels[locale];
 }
 
-export function getTransferPriorityLabel(priority: TransferPriority | undefined) {
-  if (priority === "alta") return "Alta";
-  if (priority === "baixa") return "Baixa";
-  return "Média";
+export function getTransferPriorityLabel(priority: TransferPriority | undefined, language?: LanguagePreference) {
+  return TRANSFER_PRIORITY_LABELS[resolveLanguage(language)][priority ?? "media"];
 }
 
 export function isMovementCancelled(movement: MovementItem) {

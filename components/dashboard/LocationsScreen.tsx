@@ -3,13 +3,17 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useLocale } from "@/components/providers/LocaleProvider";
+import { formatMessage } from "@/lib/i18n";
 import {
   INITIAL_LOCATIONS,
-  LOCATION_STATUS,
-  LOCATION_TYPES,
   createLocationId,
   formatUnits,
   getLocationAvailableCapacity,
+  getLocationStatusLabel,
+  getLocationStatusOptions,
+  getLocationTypeLabel,
+  getLocationTypeOptions,
   getLocationUsedCapacity,
   loadLocations,
   loadMovements,
@@ -48,6 +52,168 @@ const EMPTY_FORM: LocationFormState = {
   status: "Ativa",
 };
 
+const COPY = {
+  "pt-BR": {
+    usedCapacityRate: "{rate}% da capacidade utilizada",
+    editLocationAria: "Editar {name}",
+    deleteLocationAria: "Excluir {name}",
+    manager: "Gerente",
+    totalCapacity: "Capacidade total",
+    occupied: "Ocupado",
+    available: "Disponível",
+    loadSavedDataError: "Não foi possível carregar os dados salvos.",
+    syncDataError: "Não foi possível sincronizar os dados.",
+    nameRequired: "Informe o nome da localização.",
+    duplicatedName: "Já existe uma localização com esse nome.",
+    addressRequired: "Informe o endereço da localização.",
+    managerRequired: "Informe o gerente responsável.",
+    capacityRequired: "Informe a capacidade máxima.",
+    capacityInvalid: "Use apenas números e informe um valor maior que zero.",
+    capacityLessThanUsed: "A capacidade total não pode ser menor que o volume já ocupado.",
+    locationUpdated: "Localização atualizada com sucesso.",
+    locationCreated: "Localização cadastrada com sucesso.",
+    locationHasHistory: "Essa localização já possui movimentações registradas e não pode ser excluída.",
+    locationDeleted: "Localização excluída com sucesso.",
+    title: "Localizações",
+    description: "Gerencie fábrica, centros de distribuição, expedição e áreas de qualidade",
+    newLocation: "Nova localização",
+    total: "Total",
+    factories: "Fábricas",
+    distributionCenters: "CDs",
+    searchLabel: "Buscar localização",
+    searchPlaceholder: "Nome, gerente, endereço ou status",
+    filterLabel: "Filtrar por tipo",
+    noResultsTitle: "Nenhuma localização encontrada",
+    noResultsDescription: "Ajuste a busca, altere o filtro ou cadastre uma nova localização.",
+    editLocationTitle: "Editar localização",
+    newLocationTitle: "Nova localização",
+    modalDescription: "Cadastre os dados da área e defina a capacidade máxima disponível para armazenagem.",
+    closeForm: "Fechar formulário",
+    nameLabel: "Nome da localização",
+    namePlaceholder: "Ex.: CD Sudeste ou Expedição Dourado",
+    typeLabel: "Tipo",
+    managerLabel: "Gerente responsável",
+    managerPlaceholder: "Nome do líder da área",
+    capacityLabel: "Capacidade máxima",
+    capacityPlaceholder: "Ex.: 5000",
+    statusLabel: "Status",
+    addressLabel: "Endereço",
+    addressPlaceholder: "Unidade, setor ou endereço logístico",
+    cancel: "Cancelar",
+    saveChanges: "Salvar alterações",
+    registerLocation: "Cadastrar localização",
+    deleteTitle: "Excluir localização?",
+    deleteDescription: "A localização {name} será removida da lista.",
+    delete: "Excluir",
+  },
+  "en-US": {
+    usedCapacityRate: "{rate}% of capacity in use",
+    editLocationAria: "Edit {name}",
+    deleteLocationAria: "Delete {name}",
+    manager: "Manager",
+    totalCapacity: "Total capacity",
+    occupied: "Used",
+    available: "Available",
+    loadSavedDataError: "Could not load the saved data.",
+    syncDataError: "Could not sync the data.",
+    nameRequired: "Enter the location name.",
+    duplicatedName: "A location with this name already exists.",
+    addressRequired: "Enter the location address.",
+    managerRequired: "Enter the responsible manager.",
+    capacityRequired: "Enter the maximum capacity.",
+    capacityInvalid: "Use numbers only and enter a value greater than zero.",
+    capacityLessThanUsed: "Total capacity cannot be lower than the volume already in use.",
+    locationUpdated: "Location updated successfully.",
+    locationCreated: "Location created successfully.",
+    locationHasHistory: "This location already has recorded movements and cannot be deleted.",
+    locationDeleted: "Location deleted successfully.",
+    title: "Locations",
+    description: "Manage factory, distribution centers, shipping and quality areas",
+    newLocation: "New location",
+    total: "Total",
+    factories: "Factories",
+    distributionCenters: "DCs",
+    searchLabel: "Search location",
+    searchPlaceholder: "Name, manager, address or status",
+    filterLabel: "Filter by type",
+    noResultsTitle: "No locations found",
+    noResultsDescription: "Adjust the search, change the filter or create a new location.",
+    editLocationTitle: "Edit location",
+    newLocationTitle: "New location",
+    modalDescription: "Register the area data and define the maximum storage capacity available.",
+    closeForm: "Close form",
+    nameLabel: "Location name",
+    namePlaceholder: "Ex.: Southeast DC or Dourado Shipping",
+    typeLabel: "Type",
+    managerLabel: "Responsible manager",
+    managerPlaceholder: "Area lead name",
+    capacityLabel: "Maximum capacity",
+    capacityPlaceholder: "Ex.: 5000",
+    statusLabel: "Status",
+    addressLabel: "Address",
+    addressPlaceholder: "Unit, sector or logistics address",
+    cancel: "Cancel",
+    saveChanges: "Save changes",
+    registerLocation: "Create location",
+    deleteTitle: "Delete location?",
+    deleteDescription: "The location {name} will be removed from the list.",
+    delete: "Delete",
+  },
+  "es-ES": {
+    usedCapacityRate: "{rate}% de la capacidad utilizada",
+    editLocationAria: "Editar {name}",
+    deleteLocationAria: "Eliminar {name}",
+    manager: "Responsable",
+    totalCapacity: "Capacidad total",
+    occupied: "Ocupado",
+    available: "Disponible",
+    loadSavedDataError: "No se pudieron cargar los datos guardados.",
+    syncDataError: "No se pudieron sincronizar los datos.",
+    nameRequired: "Informa el nombre de la ubicación.",
+    duplicatedName: "Ya existe una ubicación con ese nombre.",
+    addressRequired: "Informa la dirección de la ubicación.",
+    managerRequired: "Informa el responsable del área.",
+    capacityRequired: "Informa la capacidad máxima.",
+    capacityInvalid: "Usa solo números e informa un valor mayor que cero.",
+    capacityLessThanUsed: "La capacidad total no puede ser menor que el volumen ya ocupado.",
+    locationUpdated: "Ubicación actualizada con éxito.",
+    locationCreated: "Ubicación creada con éxito.",
+    locationHasHistory: "Esta ubicación ya tiene movimientos registrados y no se puede eliminar.",
+    locationDeleted: "Ubicación eliminada con éxito.",
+    title: "Ubicaciones",
+    description: "Gestiona fábrica, centros de distribución, expedición y áreas de calidad",
+    newLocation: "Nueva ubicación",
+    total: "Total",
+    factories: "Fábricas",
+    distributionCenters: "CDs",
+    searchLabel: "Buscar ubicación",
+    searchPlaceholder: "Nombre, responsable, dirección o estado",
+    filterLabel: "Filtrar por tipo",
+    noResultsTitle: "No se encontró ninguna ubicación",
+    noResultsDescription: "Ajusta la búsqueda, cambia el filtro o crea una nueva ubicación.",
+    editLocationTitle: "Editar ubicación",
+    newLocationTitle: "Nueva ubicación",
+    modalDescription: "Registra los datos del área y define la capacidad máxima disponible para almacenamiento.",
+    closeForm: "Cerrar formulario",
+    nameLabel: "Nombre de la ubicación",
+    namePlaceholder: "Ej.: CD Sudeste o Expedición Dourado",
+    typeLabel: "Tipo",
+    managerLabel: "Responsable del área",
+    managerPlaceholder: "Nombre del líder del área",
+    capacityLabel: "Capacidad máxima",
+    capacityPlaceholder: "Ej.: 5000",
+    statusLabel: "Estado",
+    addressLabel: "Dirección",
+    addressPlaceholder: "Unidad, sector o dirección logística",
+    cancel: "Cancelar",
+    saveChanges: "Guardar cambios",
+    registerLocation: "Crear ubicación",
+    deleteTitle: "¿Eliminar ubicación?",
+    deleteDescription: "La ubicación {name} se eliminará de la lista.",
+    delete: "Eliminar",
+  },
+} as const;
+
 function LocationIcon() {
   return (
     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
@@ -61,7 +227,13 @@ function LocationIcon() {
   );
 }
 
-function StatusBadge({ status }: { status: LocationStatus }) {
+function StatusBadge({
+  status,
+  locale,
+}: {
+  status: LocationStatus;
+  locale: keyof typeof COPY;
+}) {
   const tone =
     status === "Ativa"
       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
@@ -69,10 +241,22 @@ function StatusBadge({ status }: { status: LocationStatus }) {
         ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
         : "bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300";
 
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>{status}</span>;
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>
+      {getLocationStatusLabel(status, locale)}
+    </span>
+  );
 }
 
-function ProgressBar({ value, max }: { value: number; max: number }) {
+function ProgressBar({
+  value,
+  max,
+  subtitle,
+}: {
+  value: number;
+  max: number;
+  subtitle: string;
+}) {
   const percent = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
   const tone = percent >= 90 ? "bg-red-500" : percent >= 70 ? "bg-amber-500" : "bg-emerald-500";
 
@@ -81,7 +265,9 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
       <div className="h-2 rounded-full bg-[var(--panel-soft)]">
         <div className={`h-2 rounded-full transition-all ${tone}`} style={{ width: `${percent}%` }} />
       </div>
-      <p className="mt-2 text-xs text-[var(--muted-foreground)]">{percent.toFixed(0)}% da capacidade utilizada</p>
+      <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+        {formatMessage(subtitle, { rate: percent.toFixed(0) })}
+      </p>
     </div>
   );
 }
@@ -125,11 +311,15 @@ function MetricCard({ title, value }: { title: string; value: string }) {
 function LocationCard({
   location,
   movements,
+  locale,
+  copy,
   onEdit,
   onDelete,
 }: {
   location: LocationItem;
   movements: MovementItem[];
+  locale: keyof typeof COPY;
+  copy: (typeof COPY)[keyof typeof COPY];
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -145,21 +335,21 @@ function LocationCard({
             <h3 className="text-lg font-semibold text-[var(--navy-900)]">{location.name}</h3>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="inline-flex rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--accent)]">
-                {location.type}
+                {getLocationTypeLabel(location.type, locale)}
               </span>
-              <StatusBadge status={location.status} />
+              <StatusBadge status={location.status} locale={locale} />
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-1">
-          <ActionButton onClick={onEdit} label={`Editar ${location.name}`}>
+          <ActionButton onClick={onEdit} label={formatMessage(copy.editLocationAria, { name: location.name })}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
               <path d="M4 20h4l10-10-4-4L4 16v4Z" />
               <path d="m12.5 7.5 4 4" />
             </svg>
           </ActionButton>
-          <ActionButton onClick={onDelete} tone="danger" label={`Excluir ${location.name}`}>
+          <ActionButton onClick={onDelete} tone="danger" label={formatMessage(copy.deleteLocationAria, { name: location.name })}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
               <path d="M5 7h14" />
               <path d="M9 7V5h6v2" />
@@ -173,21 +363,21 @@ function LocationCard({
       <div className="mt-5 space-y-2 text-sm text-[var(--muted-foreground)]">
         <p>{location.address}</p>
         <p>
-          <span className="font-semibold text-[var(--foreground)]">Gerente:</span> {location.manager}
+          <span className="font-semibold text-[var(--foreground)]">{copy.manager}:</span> {location.manager}
         </p>
         <p>
-          <span className="font-semibold text-[var(--foreground)]">Capacidade total:</span> {formatUnits(location.capacityTotal)}
+          <span className="font-semibold text-[var(--foreground)]">{copy.totalCapacity}:</span> {formatUnits(location.capacityTotal, locale)}
         </p>
         <p>
-          <span className="font-semibold text-[var(--foreground)]">Ocupado:</span> {formatUnits(used)}
+          <span className="font-semibold text-[var(--foreground)]">{copy.occupied}:</span> {formatUnits(used, locale)}
         </p>
         <p>
-          <span className="font-semibold text-[var(--foreground)]">Disponível:</span> {formatUnits(available)}
+          <span className="font-semibold text-[var(--foreground)]">{copy.available}:</span> {formatUnits(available, locale)}
         </p>
       </div>
 
       <div className="mt-4">
-        <ProgressBar value={used} max={location.capacityTotal} />
+        <ProgressBar value={used} max={location.capacityTotal} subtitle={copy.usedCapacityRate} />
       </div>
     </article>
   );
@@ -226,6 +416,8 @@ function Toast({ toast }: { toast: NonNullable<ToastState> }) {
 }
 
 export function LocationsScreen() {
+  const { locale } = useLocale();
+  const copy = COPY[locale];
   const [locations, setLocations] = useState<LocationItem[]>(INITIAL_LOCATIONS);
   const [movements, setMovements] = useState<MovementItem[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -238,6 +430,9 @@ export function LocationsScreen() {
   const [deleteTarget, setDeleteTarget] = useState<LocationItem | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  const locationTypeOptions = useMemo(() => getLocationTypeOptions(locale), [locale]);
+  const locationStatusOptions = useMemo(() => getLocationStatusOptions(locale), [locale]);
+  const deleteDescriptionParts = useMemo(() => copy.deleteDescription.split("{name}"), [copy.deleteDescription]);
 
   useEffect(() => {
     try {
@@ -247,7 +442,7 @@ export function LocationsScreen() {
     } catch {
       setToast({
         id: Date.now(),
-        message: "Não foi possível carregar os dados salvos.",
+        message: copy.loadSavedDataError,
         tone: "error",
       });
     }
@@ -260,7 +455,7 @@ export function LocationsScreen() {
       } catch {
         setToast({
           id: Date.now(),
-          message: "Não foi possível sincronizar os dados.",
+          message: copy.syncDataError,
           tone: "error",
         });
       }
@@ -268,7 +463,7 @@ export function LocationsScreen() {
 
     window.addEventListener("storage", syncInventory);
     return () => window.removeEventListener("storage", syncInventory);
-  }, []);
+  }, [copy.loadSavedDataError, copy.syncDataError]);
 
   useEffect(() => {
     if (!hasLoaded) {
@@ -337,15 +532,17 @@ export function LocationsScreen() {
         [
           location.name,
           location.type,
+          getLocationTypeLabel(location.type, locale),
           location.address,
           location.manager,
           location.status,
-          formatUnits(location.capacityTotal),
-          formatUnits(getLocationUsedCapacity(location.id, movements)),
+          getLocationStatusLabel(location.status, locale),
+          formatUnits(location.capacityTotal, locale),
+          formatUnits(getLocationUsedCapacity(location.id, movements), locale),
         ].join(" "),
       ).includes(query);
     });
-  }, [locations, movements, search, selectedType]);
+  }, [locale, locations, movements, search, selectedType]);
 
   const metrics = useMemo(() => {
     const factories = locations.filter((location) => location.type === "Fábrica").length;
@@ -401,27 +598,27 @@ export function LocationsScreen() {
       : 0;
 
     if (!values.name.trim()) {
-      nextErrors.name = "Informe o nome da localização.";
+      nextErrors.name = copy.nameRequired;
     } else if (
       locations.some((location) => normalizeText(location.name) === normalizedName && location.id !== editingId)
     ) {
-      nextErrors.name = "Já existe uma localização com esse nome.";
+      nextErrors.name = copy.duplicatedName;
     }
 
     if (!values.address.trim()) {
-      nextErrors.address = "Informe o endereço da localização.";
+      nextErrors.address = copy.addressRequired;
     }
 
     if (!values.manager.trim()) {
-      nextErrors.manager = "Informe o gerente responsável.";
+      nextErrors.manager = copy.managerRequired;
     }
 
     if (!values.capacity.trim()) {
-      nextErrors.capacity = "Informe a capacidade máxima.";
+      nextErrors.capacity = copy.capacityRequired;
     } else if (!Number.isFinite(parsedCapacity) || parsedCapacity <= 0) {
-      nextErrors.capacity = "Use apenas números e informe um valor maior que zero.";
+      nextErrors.capacity = copy.capacityInvalid;
     } else if (parsedCapacity < currentUsed) {
-      nextErrors.capacity = "A capacidade total não pode ser menor que o volume já ocupado.";
+      nextErrors.capacity = copy.capacityLessThanUsed;
     }
 
     return nextErrors;
@@ -456,7 +653,7 @@ export function LocationsScreen() {
 
       setToast({
         id: Date.now(),
-        message: "Localização atualizada com sucesso.",
+        message: copy.locationUpdated,
         tone: "success",
       });
     } else {
@@ -478,7 +675,7 @@ export function LocationsScreen() {
 
       setToast({
         id: Date.now(),
-        message: "Localização cadastrada com sucesso.",
+        message: copy.locationCreated,
         tone: "success",
       });
     }
@@ -505,7 +702,7 @@ export function LocationsScreen() {
     if (hasHistory) {
       setToast({
         id: Date.now(),
-        message: "Essa localização já possui movimentações registradas e não pode ser excluída.",
+        message: copy.locationHasHistory,
         tone: "error",
       });
       setDeleteTarget(null);
@@ -515,7 +712,7 @@ export function LocationsScreen() {
     setLocations((current) => current.filter((location) => location.id !== deleteTarget.id));
     setToast({
       id: Date.now(),
-      message: "Localização excluída com sucesso.",
+      message: copy.locationDeleted,
       tone: "success",
     });
     setDeleteTarget(null);
@@ -527,10 +724,8 @@ export function LocationsScreen() {
 
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <header>
-          <h1 className="text-[30px] font-semibold tracking-[-0.02em] text-[var(--navy-900)]">Localizações</h1>
-          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Gerencie fábrica, centros de distribuição, expedição e áreas de qualidade
-          </p>
+          <h1 className="text-[30px] font-semibold tracking-[-0.02em] text-[var(--navy-900)]">{copy.title}</h1>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">{copy.description}</p>
         </header>
 
         <button
@@ -541,38 +736,38 @@ export function LocationsScreen() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          Nova localização
+          {copy.newLocation}
         </button>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard title="Total" value={String(metrics.total)} />
-        <MetricCard title="Fábricas" value={String(metrics.factories)} />
-        <MetricCard title="CDs" value={String(metrics.distributionCenters)} />
-        <MetricCard title="Capacidade total" value={formatUnits(metrics.totalCapacity)} />
-        <MetricCard title="Disponível" value={formatUnits(metrics.totalAvailable)} />
+        <MetricCard title={copy.total} value={String(metrics.total)} />
+        <MetricCard title={copy.factories} value={String(metrics.factories)} />
+        <MetricCard title={copy.distributionCenters} value={String(metrics.distributionCenters)} />
+        <MetricCard title={copy.totalCapacity} value={formatUnits(metrics.totalCapacity, locale)} />
+        <MetricCard title={copy.available} value={formatUnits(metrics.totalAvailable, locale)} />
       </div>
 
       <div className="mt-6 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 shadow-[0_6px_18px_var(--shadow-color)]">
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-          <Field label="Buscar localização">
+          <Field label={copy.searchLabel}>
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Nome, gerente, endereço ou status"
+              placeholder={copy.searchPlaceholder}
               className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
             />
           </Field>
 
-          <Field label="Filtrar por tipo">
+          <Field label={copy.filterLabel}>
             <select
               value={selectedType}
               onChange={(event) => setSelectedType(event.target.value as LocationType | "Todos")}
               className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
             >
-              {LOCATION_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
+              {locationTypeOptions.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
                 </option>
               ))}
             </select>
@@ -586,6 +781,8 @@ export function LocationsScreen() {
             key={location.id}
             location={location}
             movements={movements}
+            locale={locale}
+            copy={copy}
             onEdit={() => openEditModal(location)}
             onDelete={() => confirmDelete(location)}
           />
@@ -594,10 +791,8 @@ export function LocationsScreen() {
 
       {filteredLocations.length === 0 ? (
         <div className="mt-6 max-w-5xl rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel)] px-5 py-10 text-center">
-          <p className="text-sm font-medium text-[var(--foreground)]">Nenhuma localização encontrada</p>
-          <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-            Ajuste a busca, altere o filtro ou cadastre uma nova localização.
-          </p>
+          <p className="text-sm font-medium text-[var(--foreground)]">{copy.noResultsTitle}</p>
+          <p className="mt-2 text-sm text-[var(--muted-foreground)]">{copy.noResultsDescription}</p>
         </div>
       ) : null}
 
@@ -614,18 +809,16 @@ export function LocationsScreen() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-[var(--navy-900)]">
-                  {isEditing ? "Editar localização" : "Nova localização"}
+                  {isEditing ? copy.editLocationTitle : copy.newLocationTitle}
                 </h2>
-                <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                  Cadastre os dados da área e defina a capacidade máxima disponível para armazenagem.
-                </p>
+                <p className="mt-1 text-sm text-[var(--muted-foreground)]">{copy.modalDescription}</p>
               </div>
 
               <button
                 type="button"
                 onClick={closeModal}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--panel-border)] text-[var(--muted-foreground)] transition hover:bg-[var(--panel-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
-                aria-label="Fechar formulário"
+                aria-label={copy.closeForm}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
                   <path d="M6 6l12 12M18 6 6 18" />
@@ -634,52 +827,54 @@ export function LocationsScreen() {
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <Field label="Nome da localização" error={errors.name}>
+              <Field label={copy.nameLabel} error={errors.name}>
                 <input
                   ref={firstFieldRef}
                   value={form.name}
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Ex.: CD Sudeste ou Expedição Dourado"
+                  placeholder={copy.namePlaceholder}
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
 
-              <Field label="Tipo">
+              <Field label={copy.typeLabel}>
                 <select
                   value={form.type}
                   onChange={(event) => setForm((current) => ({ ...current, type: event.target.value as LocationType }))}
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 >
-                  {LOCATION_TYPES.filter((type) => type !== "Todos").map((type) => (
-                    <option key={type} value={type}>
-                      {type}
+                  {locationTypeOptions
+                    .filter((type) => type.value !== "Todos")
+                    .map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
                     </option>
                   ))}
                 </select>
               </Field>
 
-              <Field label="Gerente responsável" error={errors.manager}>
+              <Field label={copy.managerLabel} error={errors.manager}>
                 <input
                   value={form.manager}
                   onChange={(event) => setForm((current) => ({ ...current, manager: event.target.value }))}
-                  placeholder="Nome do líder da área"
+                  placeholder={copy.managerPlaceholder}
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
 
-              <Field label="Capacidade máxima" error={errors.capacity}>
+              <Field label={copy.capacityLabel} error={errors.capacity}>
                 <input
                   value={form.capacity}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, capacity: event.target.value.replace(/[^\d]/g, "") }))
                   }
                   inputMode="numeric"
-                  placeholder="Ex.: 5000"
+                  placeholder={copy.capacityPlaceholder}
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
               </Field>
 
-              <Field label="Status">
+              <Field label={copy.statusLabel}>
                 <select
                   value={form.status}
                   onChange={(event) =>
@@ -687,20 +882,20 @@ export function LocationsScreen() {
                   }
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 >
-                  {LOCATION_STATUS.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
+                  {locationStatusOptions.map((status) => (
+                    <option key={status.value} value={status.value}>
+                      {status.label}
                     </option>
                   ))}
                 </select>
               </Field>
 
               <div className="md:col-span-2">
-                <Field label="Endereço" error={errors.address}>
+                <Field label={copy.addressLabel} error={errors.address}>
                   <input
                     value={form.address}
                     onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
-                    placeholder="Unidade, setor ou endereço logístico"
+                    placeholder={copy.addressPlaceholder}
                     className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                   />
                 </Field>
@@ -713,14 +908,14 @@ export function LocationsScreen() {
                 onClick={closeModal}
                 className="rounded-xl border border-[var(--panel-border)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]"
               >
-                Cancelar
+                {copy.cancel}
               </button>
               <button
                 type="button"
                 onClick={handleSubmit}
                 className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:opacity-95"
               >
-                {isEditing ? "Salvar alterações" : "Cadastrar localização"}
+                {isEditing ? copy.saveChanges : copy.registerLocation}
               </button>
             </div>
           </div>
@@ -737,10 +932,11 @@ export function LocationsScreen() {
           }}
         >
           <div className="w-full max-w-md rounded-3xl border border-[var(--panel-border)] bg-[var(--panel)] p-5 shadow-[0_20px_50px_rgba(0,0,0,0.28)]">
-            <h2 className="text-lg font-semibold text-[var(--navy-900)]">Excluir localização?</h2>
+            <h2 className="text-lg font-semibold text-[var(--navy-900)]">{copy.deleteTitle}</h2>
             <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-              A localização <span className="font-semibold text-[var(--foreground)]">{deleteTarget.name}</span> será
-              removida da lista.
+              {deleteDescriptionParts[0]}
+              <span className="font-semibold text-[var(--foreground)]">{deleteTarget.name}</span>
+              {deleteDescriptionParts[1]}
             </p>
 
             <div className="mt-6 flex justify-end gap-3">
@@ -749,14 +945,14 @@ export function LocationsScreen() {
                 onClick={() => setDeleteTarget(null)}
                 className="rounded-xl border border-[var(--panel-border)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]"
               >
-                Cancelar
+                {copy.cancel}
               </button>
               <button
                 type="button"
                 onClick={handleDelete}
                 className="rounded-xl bg-[#dc2626] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-95"
               >
-                Excluir
+                {copy.delete}
               </button>
             </div>
           </div>

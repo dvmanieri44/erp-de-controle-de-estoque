@@ -31,22 +31,21 @@ export default function RootLayout({
               (function() {
                 try {
                   var storedTheme = localStorage.getItem("theme-preference") || "claro";
+                  var storedLanguage = localStorage.getItem("language-preference") || "pt-BR";
                   var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
                   var resolvedTheme = storedTheme === "automatico" ? (prefersDark ? "escuro" : "claro") : storedTheme;
                   document.documentElement.dataset.theme = resolvedTheme === "escuro" ? "dark" : "light";
+                  document.documentElement.lang = storedLanguage;
                 } catch (error) {
                   document.documentElement.dataset.theme = "light";
+                  document.documentElement.lang = "pt-BR";
                 }
               })();
             `,
           }}
         />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
-      </body>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>{children}</body>
     </html>
   );
 }

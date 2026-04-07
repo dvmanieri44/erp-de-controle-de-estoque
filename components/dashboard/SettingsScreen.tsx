@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { useLocale } from "@/components/providers/LocaleProvider";
+import { getLanguageDisplayName } from "@/lib/i18n";
 import {
   COMPANY_SETTINGS_KEY,
   LANGUAGE_PREFERENCE_KEY,
@@ -18,38 +20,123 @@ import {
   type ThemePreference,
 } from "@/lib/ui-preferences";
 
-const APPEARANCE_OPTIONS = [
-  { id: "claro", label: "Claro" },
-  { id: "escuro", label: "Escuro" },
-  { id: "automatico", label: "Automático" },
-] as const;
-
-const LANGUAGE_OPTIONS = [
-  { value: "pt-BR", label: "Português (Brasil)" },
-  { value: "en-US", label: "English (United States)" },
-] as const;
-
-const NOTIFICATION_OPTIONS = [
-  { id: "email", label: "Notificações por e-mail" },
-  { id: "stock", label: "Alertas de estoque baixo" },
-  { id: "expiration", label: "Alertas de validade" },
-  { id: "dailySummary", label: "Resumo diário por e-mail" },
-] as const;
-
-const HELP_TOPICS = [
-  {
-    title: "Como registrar um novo lote?",
-    description: "Acesse Produtos ou Lotes, informe a linha PremieRpet, o código do lote e a quantidade inicial produzida.",
+const COPY = {
+  "pt-BR": {
+    title: "Configurações",
+    appearance: "Aparência",
+    theme: "Tema",
+    light: "Claro",
+    dark: "Escuro",
+    automatic: "Automático",
+    regional: "Regional",
+    language: "Idioma",
+    notifications: "Notificações",
+    notificationEmail: "Notificações por e-mail",
+    notificationStock: "Alertas de estoque baixo",
+    notificationExpiration: "Alertas de validade",
+    notificationDaily: "Resumo diário por e-mail",
+    companyInfo: "Informações da Empresa",
+    companyName: "Nome da empresa",
+    legalName: "Razão social",
+    taxId: "CNPJ",
+    email: "E-mail",
+    phone: "Telefone",
+    whatsapp: "WhatsApp",
+    address: "Endereço",
+    helpCenter: "Central de ajuda",
+    help1Title: "Como registrar um novo lote?",
+    help1Description: "Acesse Produtos ou Lotes, informe a linha PremieRpet, o código do lote e a quantidade inicial produzida.",
+    help2Title: "Como acompanhar estoque crítico?",
+    help2Description: "Use a seção Estoque Baixo para acompanhar rupturas em CDs, expedição e áreas com necessidade de reposição.",
+    help3Title: "Onde acompanho transferências entre fábrica e CDs?",
+    help3Description: "As movimentações operacionais ficam em Transferências e Histórico, com rastreio entre Dourado, expedição e centros de distribuição.",
+    support: "Suporte",
+    supportHours: "Suporte operacional em dias úteis, das 8h às 18h",
+    documentation: "Documentação",
+    guideTitle: "Guia operacional PremieRpet",
+    guideDescription: "Acesse padrões de movimentação, boas práticas de armazenagem e instruções de uso.",
+    saveChanges: "Salvar alterações",
   },
-  {
-    title: "Como acompanhar estoque crítico?",
-    description: "Use a seção Estoque Baixo para acompanhar rupturas em CDs, expedição e áreas com necessidade de reposição.",
+  "en-US": {
+    title: "Settings",
+    appearance: "Appearance",
+    theme: "Theme",
+    light: "Light",
+    dark: "Dark",
+    automatic: "Automatic",
+    regional: "Regional",
+    language: "Language",
+    notifications: "Notifications",
+    notificationEmail: "Email notifications",
+    notificationStock: "Low stock alerts",
+    notificationExpiration: "Expiration alerts",
+    notificationDaily: "Daily email summary",
+    companyInfo: "Company Information",
+    companyName: "Company name",
+    legalName: "Legal name",
+    taxId: "Tax ID",
+    email: "Email",
+    phone: "Phone",
+    whatsapp: "WhatsApp",
+    address: "Address",
+    helpCenter: "Help center",
+    help1Title: "How do I register a new lot?",
+    help1Description: "Go to Products or Lots, enter the PremieRpet line, the lot code and the initial produced quantity.",
+    help2Title: "How do I monitor critical stock?",
+    help2Description: "Use the Low Stock section to track shortages in DCs, shipping and areas that need replenishment.",
+    help3Title: "Where do I track transfers between the factory and DCs?",
+    help3Description: "Operational movements are available in Transfers and History, with traceability between Dourado, shipping and distribution centers.",
+    support: "Support",
+    supportHours: "Operational support on business days, from 8 AM to 6 PM",
+    documentation: "Documentation",
+    guideTitle: "PremieRpet operational guide",
+    guideDescription: "Access movement standards, storage best practices and usage instructions.",
+    saveChanges: "Save changes",
   },
-  {
-    title: "Onde acompanho transferências entre fábrica e CDs?",
-    description: "As movimentações operacionais ficam em Transferências e Histórico, com rastreio entre Dourado, expedição e centros de distribuição.",
+  "es-ES": {
+    title: "Configuración",
+    appearance: "Apariencia",
+    theme: "Tema",
+    light: "Claro",
+    dark: "Oscuro",
+    automatic: "Automático",
+    regional: "Regional",
+    language: "Idioma",
+    notifications: "Notificaciones",
+    notificationEmail: "Notificaciones por correo",
+    notificationStock: "Alertas de stock bajo",
+    notificationExpiration: "Alertas de vencimiento",
+    notificationDaily: "Resumen diario por correo",
+    companyInfo: "Información de la Empresa",
+    companyName: "Nombre de la empresa",
+    legalName: "Razón social",
+    taxId: "CIF/CNPJ",
+    email: "Correo",
+    phone: "Teléfono",
+    whatsapp: "WhatsApp",
+    address: "Dirección",
+    helpCenter: "Centro de ayuda",
+    help1Title: "¿Cómo registrar un nuevo lote?",
+    help1Description: "Accede a Productos o Lotes, informa la línea PremieRpet, el código del lote y la cantidad inicial producida.",
+    help2Title: "¿Cómo seguir el stock crítico?",
+    help2Description: "Usa la sección Stock Bajo para seguir quiebres en CDs, expedición y áreas que necesitan reposición.",
+    help3Title: "¿Dónde sigo las transferencias entre fábrica y CDs?",
+    help3Description: "Los movimientos operativos están en Transferencias e Historial, con trazabilidad entre Dourado, expedición y centros de distribución.",
+    support: "Soporte",
+    supportHours: "Soporte operativo en días hábiles, de 8:00 a 18:00",
+    documentation: "Documentación",
+    guideTitle: "Guía operativa PremieRpet",
+    guideDescription: "Accede a estándares de movimientos, buenas prácticas de almacenaje e instrucciones de uso.",
+    saveChanges: "Guardar cambios",
   },
-] as const;
+} as const;
+
+type SettingsFormState = {
+  theme: ThemePreference;
+  language: LanguagePreference;
+  notifications: NotificationSettings;
+  company: CompanySettings;
+};
 
 const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   companyName: "PremieRpet",
@@ -66,13 +153,6 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   stock: true,
   expiration: true,
   dailySummary: false,
-};
-
-type SettingsFormState = {
-  theme: ThemePreference;
-  language: LanguagePreference;
-  notifications: NotificationSettings;
-  company: CompanySettings;
 };
 
 function CardSection({
@@ -235,6 +315,8 @@ function buildInitialState(): SettingsFormState {
 }
 
 export function SettingsScreen() {
+  const { locale, setLocale } = useLocale();
+  const copy = COPY[locale];
   const [savedSettings, setSavedSettings] = useState<SettingsFormState | null>(null);
   const [formState, setFormState] = useState<SettingsFormState>(buildInitialState);
 
@@ -287,6 +369,37 @@ export function SettingsScreen() {
     return () => mediaQuery.removeEventListener("change", applyTheme);
   }, [formState.theme]);
 
+  const helpTopics = useMemo(
+    () => [
+      { title: copy.help1Title, description: copy.help1Description },
+      { title: copy.help2Title, description: copy.help2Description },
+      { title: copy.help3Title, description: copy.help3Description },
+    ],
+    [copy.help1Description, copy.help1Title, copy.help2Description, copy.help2Title, copy.help3Description, copy.help3Title],
+  );
+
+  const languageOptions = useMemo(
+    () =>
+      (["pt-BR", "en-US", "es-ES"] as const).map((value) => ({
+        value,
+        label: getLanguageDisplayName(value, locale),
+      })),
+    [locale],
+  );
+
+  const themeOptions = [
+    { id: "claro" as const, label: copy.light },
+    { id: "escuro" as const, label: copy.dark },
+    { id: "automatico" as const, label: copy.automatic },
+  ];
+
+  const notificationOptions = [
+    { id: "email" as const, label: copy.notificationEmail },
+    { id: "stock" as const, label: copy.notificationStock },
+    { id: "expiration" as const, label: copy.notificationExpiration },
+    { id: "dailySummary" as const, label: copy.notificationDaily },
+  ];
+
   function updateCompanyField(field: keyof CompanySettings, value: string) {
     setFormState((current) => ({
       ...current,
@@ -307,6 +420,24 @@ export function SettingsScreen() {
     }));
   }
 
+  function handleLanguageChange(value: string) {
+    const nextLanguage = value as LanguagePreference;
+
+    setFormState((current) => ({
+      ...current,
+      language: nextLanguage,
+    }));
+    setSavedSettings((current) =>
+      current
+        ? {
+            ...current,
+            language: nextLanguage,
+          }
+        : current,
+    );
+    setLocale(nextLanguage);
+  }
+
   function handleSave() {
     window.localStorage.setItem(THEME_PREFERENCE_KEY, formState.theme);
     window.localStorage.setItem(LANGUAGE_PREFERENCE_KEY, formState.language);
@@ -315,6 +446,7 @@ export function SettingsScreen() {
     window.localStorage.setItem(COMPANY_SETTINGS_KEY, JSON.stringify(formState.company));
     window.localStorage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify(formState.notifications));
     window.dispatchEvent(new Event(UI_PREFERENCES_EVENT));
+    setLocale(formState.language);
     setSavedSettings(formState);
   }
 
@@ -324,13 +456,13 @@ export function SettingsScreen() {
 
       <div className="space-y-4 pt-5">
         <header className="px-2">
-          <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-[var(--foreground)]">Configurações</h1>
+          <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-[var(--foreground)]">{copy.title}</h1>
         </header>
 
-        <CardSection title="Aparência" icon={<AppearanceIcon />}>
-          <div className="mb-2 text-[11px] font-medium text-[var(--muted-foreground)]">Tema</div>
+        <CardSection title={copy.appearance} icon={<AppearanceIcon />}>
+          <div className="mb-2 text-[11px] font-medium text-[var(--muted-foreground)]">{copy.theme}</div>
           <div className="grid gap-2 md:grid-cols-3">
-            {APPEARANCE_OPTIONS.map((option) => (
+            {themeOptions.map((option) => (
               <ThemeOption
                 key={option.id}
                 label={option.label}
@@ -341,18 +473,18 @@ export function SettingsScreen() {
           </div>
         </CardSection>
 
-        <CardSection title="Regional" icon={<RegionalIcon />}>
+        <CardSection title={copy.regional} icon={<RegionalIcon />}>
           <SelectField
-            label="Idioma"
+            label={copy.language}
             value={formState.language}
-            options={LANGUAGE_OPTIONS}
-            onChange={(value) => setFormState((current) => ({ ...current, language: value as LanguagePreference }))}
+            options={languageOptions}
+            onChange={handleLanguageChange}
           />
         </CardSection>
 
-        <CardSection title="Notificações" icon={<NotificationIcon />}>
+        <CardSection title={copy.notifications} icon={<NotificationIcon />}>
           <div className="space-y-0.5">
-            {NOTIFICATION_OPTIONS.map((option) => (
+            {notificationOptions.map((option) => (
               <label key={option.id} className="flex items-center justify-between py-1.5">
                 <span className="text-xs text-[var(--foreground)]">{option.label}</span>
                 <input
@@ -366,75 +498,44 @@ export function SettingsScreen() {
           </div>
         </CardSection>
 
-        <CardSection title="Informações da Empresa" icon={<CompanyIcon />}>
+        <CardSection title={copy.companyInfo} icon={<CompanyIcon />}>
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">Nome da empresa</span>
-              <input
-                value={formState.company.companyName}
-                onChange={(event) => updateCompanyField("companyName", event.target.value)}
-                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
-              />
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">{copy.companyName}</span>
+              <input value={formState.company.companyName} onChange={(event) => updateCompanyField("companyName", event.target.value)} className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors" />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">Razão social</span>
-              <input
-                value={formState.company.legalName}
-                onChange={(event) => updateCompanyField("legalName", event.target.value)}
-                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
-              />
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">{copy.legalName}</span>
+              <input value={formState.company.legalName} onChange={(event) => updateCompanyField("legalName", event.target.value)} className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors" />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">CNPJ</span>
-              <input
-                value={formState.company.taxId}
-                onChange={(event) => updateCompanyField("taxId", event.target.value)}
-                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
-              />
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">{copy.taxId}</span>
+              <input value={formState.company.taxId} onChange={(event) => updateCompanyField("taxId", event.target.value)} className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors" />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">E-mail</span>
-              <input
-                value={formState.company.email}
-                onChange={(event) => updateCompanyField("email", event.target.value)}
-                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
-              />
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">{copy.email}</span>
+              <input value={formState.company.email} onChange={(event) => updateCompanyField("email", event.target.value)} className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors" />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">Telefone</span>
-              <input
-                value={formState.company.phone}
-                onChange={(event) => updateCompanyField("phone", event.target.value)}
-                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
-              />
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">{copy.phone}</span>
+              <input value={formState.company.phone} onChange={(event) => updateCompanyField("phone", event.target.value)} className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors" />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">WhatsApp</span>
-              <input
-                value={formState.company.whatsapp}
-                onChange={(event) => updateCompanyField("whatsapp", event.target.value)}
-                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
-              />
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">{copy.whatsapp}</span>
+              <input value={formState.company.whatsapp} onChange={(event) => updateCompanyField("whatsapp", event.target.value)} className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors" />
             </label>
             <label className="block md:col-span-2">
-              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">Endereço</span>
-              <input
-                value={formState.company.address}
-                onChange={(event) => updateCompanyField("address", event.target.value)}
-                className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors"
-              />
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--muted-foreground)]">{copy.address}</span>
+              <input value={formState.company.address} onChange={(event) => updateCompanyField("address", event.target.value)} className="h-9 w-full rounded-lg border border-[var(--panel-border)] bg-[var(--input-bg)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors" />
             </label>
           </div>
         </CardSection>
 
-        <CardSection title="Central de ajuda" icon={<HelpIcon />}>
+        <CardSection title={copy.helpCenter} icon={<HelpIcon />}>
           <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-2">
-              {HELP_TOPICS.map((topic) => (
-                <article
-                  key={topic.title}
-                  className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-3 py-3 transition-colors"
-                >
+              {helpTopics.map((topic) => (
+                <article key={topic.title} className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-3 py-3 transition-colors">
                   <h3 className="text-sm font-semibold text-[var(--foreground)]">{topic.title}</h3>
                   <p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">{topic.description}</p>
                 </article>
@@ -443,22 +544,16 @@ export function SettingsScreen() {
 
             <div className="space-y-3">
               <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-3 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
-                  Suporte
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">{copy.support}</p>
                 <p className="mt-2 text-sm font-medium text-[var(--foreground)]">{savedSettings?.company.email ?? formState.company.email}</p>
                 <p className="mt-1 text-xs text-[var(--muted-foreground)]">{savedSettings?.company.whatsapp ?? formState.company.whatsapp}</p>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Suporte operacional em dias úteis, das 8h às 18h</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">{copy.supportHours}</p>
               </div>
 
               <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-soft)] px-3 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
-                  Documentação
-                </p>
-                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">Guia operacional PremieRpet</p>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Acesse padrões de movimentação, boas práticas de armazenagem e instruções de uso.
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">{copy.documentation}</p>
+                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">{copy.guideTitle}</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">{copy.guideDescription}</p>
               </div>
             </div>
           </div>
@@ -479,7 +574,7 @@ export function SettingsScreen() {
               <path d="M5 20h14" />
               <path d="M5 4h11l3 3v13H5V4Z" />
             </svg>
-            Salvar alterações
+            {copy.saveChanges}
           </button>
         </div>
       </div>

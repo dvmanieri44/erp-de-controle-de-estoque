@@ -1,3 +1,5 @@
+import { DEFAULT_LANGUAGE_PREFERENCE, loadLanguagePreference, type LanguagePreference } from "@/lib/ui-preferences";
+
 export const USER_ACCOUNTS_STORAGE_KEY = "erp.user-accounts";
 export const ACTIVE_USER_ACCOUNT_KEY = "erp.active-user-account";
 
@@ -13,16 +15,51 @@ export type UserAccount = {
   status: UserStatus;
 };
 
+function resolveLanguage(language?: LanguagePreference) {
+  if (language) {
+    return language;
+  }
+
+  return typeof window === "undefined" ? DEFAULT_LANGUAGE_PREFERENCE : loadLanguagePreference();
+}
+
+const USER_ROLE_COPY: Record<LanguagePreference, Record<UserRole, { label: string; helper: string }>> = {
+  "pt-BR": {
+    administrador: { label: "Administrador", helper: "Acesso total ao sistema e às configurações" },
+    gestor: { label: "Gestor", helper: "Acompanha a operação e gerencia áreas da unidade" },
+    operador: { label: "Operador", helper: "Registra movimentações e acompanha execuções" },
+    consulta: { label: "Consulta", helper: "Visualiza informações sem editar dados críticos" },
+  },
+  "en-US": {
+    administrador: { label: "Administrator", helper: "Full access to the system and settings" },
+    gestor: { label: "Manager", helper: "Monitors the operation and manages unit areas" },
+    operador: { label: "Operator", helper: "Records movements and follows executions" },
+    consulta: { label: "Viewer", helper: "Can view information without editing critical data" },
+  },
+  "es-ES": {
+    administrador: { label: "Administrador", helper: "Acceso total al sistema y a la configuración" },
+    gestor: { label: "Gestor", helper: "Acompaña la operación y gestiona áreas de la unidad" },
+    operador: { label: "Operador", helper: "Registra movimientos y acompaña ejecuciones" },
+    consulta: { label: "Consulta", helper: "Visualiza información sin editar datos críticos" },
+  },
+};
+
+const USER_STATUS_COPY: Record<LanguagePreference, Record<UserStatus, string>> = {
+  "pt-BR": { ativo: "Ativo", inativo: "Inativo" },
+  "en-US": { ativo: "Active", inativo: "Inactive" },
+  "es-ES": { ativo: "Activo", inativo: "Inactivo" },
+};
+
 export const USER_ROLE_OPTIONS: Array<{ value: UserRole; label: string; helper: string }> = [
-  { value: "administrador", label: "Administrador", helper: "Acesso total ao sistema e às configurações" },
-  { value: "gestor", label: "Gestor", helper: "Acompanha operação e gerencia áreas da unidade" },
-  { value: "operador", label: "Operador", helper: "Registra movimentações e acompanha execuções" },
-  { value: "consulta", label: "Consulta", helper: "Visualiza informações sem editar dados críticos" },
+  { value: "administrador", ...USER_ROLE_COPY["pt-BR"].administrador },
+  { value: "gestor", ...USER_ROLE_COPY["pt-BR"].gestor },
+  { value: "operador", ...USER_ROLE_COPY["pt-BR"].operador },
+  { value: "consulta", ...USER_ROLE_COPY["pt-BR"].consulta },
 ];
 
 export const USER_STATUS_OPTIONS: Array<{ value: UserStatus; label: string }> = [
-  { value: "ativo", label: "Ativo" },
-  { value: "inativo", label: "Inativo" },
+  { value: "ativo", label: USER_STATUS_COPY["pt-BR"].ativo },
+  { value: "inativo", label: USER_STATUS_COPY["pt-BR"].inativo },
 ];
 
 export const INITIAL_USER_ACCOUNTS: UserAccount[] = [
@@ -60,6 +97,27 @@ export const INITIAL_USER_ACCOUNTS: UserAccount[] = [
   },
 ] as const;
 
+export function getUserRoleOptions(language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
+  return (Object.keys(USER_ROLE_COPY[locale]) as UserRole[]).map((value) => ({
+    value,
+    label: USER_ROLE_COPY[locale][value].label,
+    helper: USER_ROLE_COPY[locale][value].helper,
+  }));
+}
+
+export function getUserStatusOptions(language?: LanguagePreference) {
+  const locale = resolveLanguage(language);
+  return (Object.keys(USER_STATUS_COPY[locale]) as UserStatus[]).map((value) => ({
+    value,
+    label: USER_STATUS_COPY[locale][value],
+  }));
+}
+
+export function getUserStatusLabel(status: UserStatus, language?: LanguagePreference) {
+  return USER_STATUS_COPY[resolveLanguage(language)][status];
+}
+
 export function createUserAccountId(value: string) {
   return value
     .normalize("NFD")
@@ -77,8 +135,8 @@ function isUserStatus(value: unknown): value is UserStatus {
   return value === "ativo" || value === "inativo";
 }
 
-export function getUserRoleLabel(role: UserRole) {
-  return USER_ROLE_OPTIONS.find((option) => option.value === role)?.label ?? "Operador";
+export function getUserRoleLabel(role: UserRole, language?: LanguagePreference) {
+  return USER_ROLE_COPY[resolveLanguage(language)][role].label;
 }
 
 export function loadUserAccounts() {

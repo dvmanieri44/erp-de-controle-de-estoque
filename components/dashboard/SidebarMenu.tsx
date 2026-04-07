@@ -4,16 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { DASHBOARD_GROUPS, DASHBOARD_SECTIONS, DEFAULT_SECTION_ID, type DashboardSection } from "@/lib/dashboard-sections";
+import { useLocale } from "@/components/providers/LocaleProvider";
+import {
+  DEFAULT_SECTION_ID,
+  getDashboardGroups,
+  getDashboardSections,
+  type DashboardSection,
+} from "@/lib/dashboard-sections";
 import {
   createUserAccountId,
   getUserRoleLabel,
+  getUserRoleOptions,
+  getUserStatusLabel,
+  getUserStatusOptions,
   loadActiveUserAccountId,
   loadUserAccounts,
   saveActiveUserAccountId,
   saveUserAccounts,
-  USER_ROLE_OPTIONS,
-  USER_STATUS_OPTIONS,
   type UserAccount,
   type UserRole,
   type UserStatus,
@@ -24,6 +31,111 @@ type IconProps = { className?: string };
 type AccountFormState = { name: string; email: string; role: UserRole; unit: string; status: UserStatus };
 
 const EMPTY_ACCOUNT_FORM: AccountFormState = { name: "", email: "", role: "operador", unit: "", status: "ativo" };
+
+const COPY = {
+  "pt-BR": {
+    appSubtitle: "Operações e Estoque",
+    accountSection: "Contas",
+    accountTitle: "Perfis e níveis de acesso",
+    accountDescription: "Troque a conta ativa, crie novos perfis e organize acessos por administrador, gestor, operador ou consulta.",
+    newAccount: "Nova conta",
+    close: "Fechar",
+    activeAccount: "Conta ativa",
+    useAccount: "Usar conta",
+    edit: "Editar",
+    delete: "Excluir",
+    signOutCurrent: "Encerrar sessão atual",
+    signOut: "Encerrar sessão",
+    editAccount: "Editar conta",
+    createAccount: "Criar conta",
+    updateProfile: "Atualize os dados do perfil",
+    createProfile: "Cadastre um novo perfil de acesso",
+    name: "Nome",
+    email: "E-mail",
+    profile: "Perfil",
+    status: "Status",
+    unit: "Unidade / área",
+    cancelEdit: "Cancelar edição",
+    saveChanges: "Salvar alterações",
+    create: "Criar conta",
+    nameEmailUnitRequired: "Preencha nome, e-mail e unidade.",
+    duplicatedEmail: "Já existe uma conta com esse e-mail.",
+    keepAtLeastOne: "Mantenha pelo menos uma conta cadastrada.",
+    switchBeforeDelete: "Troque a conta ativa antes de excluir.",
+    inactive: "Inativo",
+    noSession: "Sem sessão",
+    noActiveSession: "Sem sessão ativa",
+    clickSelect: "Clique para selecionar uma conta",
+  },
+  "en-US": {
+    appSubtitle: "Operations and Inventory",
+    accountSection: "Accounts",
+    accountTitle: "Profiles and access levels",
+    accountDescription: "Switch the active account, create new profiles and organize access by administrator, manager, operator or viewer.",
+    newAccount: "New account",
+    close: "Close",
+    activeAccount: "Active account",
+    useAccount: "Use account",
+    edit: "Edit",
+    delete: "Delete",
+    signOutCurrent: "End current session",
+    signOut: "Sign out",
+    editAccount: "Edit account",
+    createAccount: "Create account",
+    updateProfile: "Update profile data",
+    createProfile: "Create a new access profile",
+    name: "Name",
+    email: "Email",
+    profile: "Role",
+    status: "Status",
+    unit: "Unit / area",
+    cancelEdit: "Cancel editing",
+    saveChanges: "Save changes",
+    create: "Create account",
+    nameEmailUnitRequired: "Fill in name, email and unit.",
+    duplicatedEmail: "An account with this email already exists.",
+    keepAtLeastOne: "Keep at least one registered account.",
+    switchBeforeDelete: "Switch the active account before deleting.",
+    inactive: "Inactive",
+    noSession: "No session",
+    noActiveSession: "No active session",
+    clickSelect: "Click to select an account",
+  },
+  "es-ES": {
+    appSubtitle: "Operaciones e Inventario",
+    accountSection: "Cuentas",
+    accountTitle: "Perfiles y niveles de acceso",
+    accountDescription: "Cambia la cuenta activa, crea nuevos perfiles y organiza accesos por administrador, gestor, operador o consulta.",
+    newAccount: "Nueva cuenta",
+    close: "Cerrar",
+    activeAccount: "Cuenta activa",
+    useAccount: "Usar cuenta",
+    edit: "Editar",
+    delete: "Eliminar",
+    signOutCurrent: "Cerrar sesión actual",
+    signOut: "Cerrar sesión",
+    editAccount: "Editar cuenta",
+    createAccount: "Crear cuenta",
+    updateProfile: "Actualiza los datos del perfil",
+    createProfile: "Crea un nuevo perfil de acceso",
+    name: "Nombre",
+    email: "Correo",
+    profile: "Perfil",
+    status: "Estado",
+    unit: "Unidad / área",
+    cancelEdit: "Cancelar edición",
+    saveChanges: "Guardar cambios",
+    create: "Crear cuenta",
+    nameEmailUnitRequired: "Completa nombre, correo y unidad.",
+    duplicatedEmail: "Ya existe una cuenta con este correo.",
+    keepAtLeastOne: "Mantén al menos una cuenta registrada.",
+    switchBeforeDelete: "Cambia la cuenta activa antes de eliminar.",
+    inactive: "Inactiva",
+    noSession: "Sin sesión",
+    noActiveSession: "Sin sesión activa",
+    clickSelect: "Haz clic para seleccionar una cuenta",
+  },
+} as const;
 
 const icons = {
   dashboard: DashboardIcon,
@@ -46,6 +158,7 @@ const icons = {
   incidentes: AlertIcon,
   documentos: FileIcon,
   historico: HistoryIcon,
+  roadmap: DashboardIcon,
   configuracoes: SettingsIcon,
 } as const;
 
@@ -134,6 +247,10 @@ function AccountManager({
   setActiveAccountId: (id: string | null) => void;
   onClose: () => void;
 }) {
+  const { locale } = useLocale();
+  const copy = COPY[locale];
+  const roleOptions = getUserRoleOptions(locale);
+  const statusOptions = getUserStatusOptions(locale);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<AccountFormState>(EMPTY_ACCOUNT_FORM);
   const [error, setError] = useState<string | null>(null);
@@ -155,11 +272,11 @@ function AccountManager({
 
   function submit() {
     if (!form.name.trim() || !form.email.trim() || !form.unit.trim()) {
-      setError("Preencha nome, e-mail e unidade.");
+      setError(copy.nameEmailUnitRequired);
       return;
     }
     if (accounts.some((account) => account.email.toLowerCase() === form.email.trim().toLowerCase() && account.id !== editingId)) {
-      setError("Já existe uma conta com esse e-mail.");
+      setError(copy.duplicatedEmail);
       return;
     }
 
@@ -183,11 +300,11 @@ function AccountManager({
 
   function removeAccount(accountId: string) {
     if (accounts.length === 1) {
-      setError("Mantenha pelo menos uma conta cadastrada.");
+      setError(copy.keepAtLeastOne);
       return;
     }
     if (activeAccount?.id === accountId) {
-      setError("Troque a conta ativa antes de excluir.");
+      setError(copy.switchBeforeDelete);
       return;
     }
     setAccounts(accounts.filter((account) => account.id !== accountId));
@@ -198,13 +315,13 @@ function AccountManager({
       <div className="w-full max-w-5xl rounded-[32px] border border-[var(--panel-border)] bg-[var(--panel)] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
         <div className="flex flex-col gap-4 border-b border-[var(--panel-border)] pb-5 md:flex-row md:items-start md:justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Contas</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-[var(--navy-900)]">Perfis e níveis de acesso</h2>
-            <p className="mt-2 max-w-2xl text-sm text-[var(--muted-foreground)]">Troque a conta ativa, crie novos perfis e organize acessos por administrador, gestor, operador ou consulta.</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">{copy.accountSection}</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-[var(--navy-900)]">{copy.accountTitle}</h2>
+            <p className="mt-2 max-w-2xl text-sm text-[var(--muted-foreground)]">{copy.accountDescription}</p>
           </div>
           <div className="flex gap-3">
-            <button type="button" onClick={resetForm} className="rounded-xl border border-[var(--panel-border)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]">Nova conta</button>
-            <button type="button" onClick={onClose} className="rounded-xl border border-[var(--panel-border)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]">Fechar</button>
+            <button type="button" onClick={resetForm} className="rounded-xl border border-[var(--panel-border)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]">{copy.newAccount}</button>
+            <button type="button" onClick={onClose} className="rounded-xl border border-[var(--panel-border)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]">{copy.close}</button>
           </div>
         </div>
 
@@ -220,17 +337,17 @@ function AccountManager({
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-semibold text-[var(--foreground)]">{account.name}</p>
-                          {isActive ? <span className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[11px] font-semibold text-white">Conta ativa</span> : null}
-                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${roleTone(account.role)}`}>{getUserRoleLabel(account.role)}</span>
+                          {isActive ? <span className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[11px] font-semibold text-white">{copy.activeAccount}</span> : null}
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${roleTone(account.role)}`}>{getUserRoleLabel(account.role, locale)}</span>
                         </div>
                         <p className="mt-1 text-sm text-[var(--muted-foreground)]">{account.email}</p>
-                        <p className="mt-1 text-xs text-[var(--muted-foreground)]">{account.unit} · {account.status === "ativo" ? "Ativo" : "Inativo"}</p>
+                        <p className="mt-1 text-xs text-[var(--muted-foreground)]">{account.unit} · {getUserStatusLabel(account.status, locale)}</p>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {!isActive ? <button type="button" onClick={() => setActiveAccountId(account.id)} className="rounded-xl bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white">Usar conta</button> : null}
-                      <button type="button" onClick={() => editAccount(account)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                      <button type="button" onClick={() => removeAccount(account.id)} className="rounded-xl border border-[#fecaca] bg-[#fff1f2] px-3 py-2 text-xs font-semibold text-[#be123c]">Excluir</button>
+                      {!isActive ? <button type="button" onClick={() => setActiveAccountId(account.id)} className="rounded-xl bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white">{copy.useAccount}</button> : null}
+                      <button type="button" onClick={() => editAccount(account)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">{copy.edit}</button>
+                      <button type="button" onClick={() => removeAccount(account.id)} className="rounded-xl border border-[#fecaca] bg-[#fff1f2] px-3 py-2 text-xs font-semibold text-[#be123c]">{copy.delete}</button>
                     </div>
                   </div>
                 </article>
@@ -238,26 +355,26 @@ function AccountManager({
             })}
             <button type="button" onClick={() => setActiveAccountId(null)} className="inline-flex items-center gap-2 px-1 py-2 text-sm font-semibold text-[#d74b4b] transition hover:opacity-80">
               <LogoutIcon className="h-4 w-4" />
-              Encerrar sessão atual
+              {copy.signOutCurrent}
             </button>
           </section>
 
           <section className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">{editingId ? "Editar conta" : "Criar conta"}</p>
-            <h3 className="mt-2 text-lg font-semibold text-[var(--navy-900)]">{editingId ? "Atualize os dados do perfil" : "Cadastre um novo perfil de acesso"}</h3>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">{editingId ? copy.editAccount : copy.createAccount}</p>
+            <h3 className="mt-2 text-lg font-semibold text-[var(--navy-900)]">{editingId ? copy.updateProfile : copy.createProfile}</h3>
             <div className="mt-5 space-y-4">
-              <Field label="Nome"><input ref={firstFieldRef} value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Supervisão de Expedição" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
-              <Field label="E-mail"><input value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="conta@premierpet.com.br" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
+              <Field label={copy.name}><input ref={firstFieldRef} value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Supervisão de Expedição" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
+              <Field label={copy.email}><input value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="conta@premierpet.com.br" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Perfil"><select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as UserRole }))} className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]">{USER_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
-                <Field label="Status"><select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as UserStatus }))} className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]">{USER_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+                <Field label={copy.profile}><select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as UserRole }))} className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]">{roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+                <Field label={copy.status}><select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as UserStatus }))} className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]">{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
               </div>
-              <Field label="Unidade / área"><input value={form.unit} onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value }))} placeholder="Ex.: Complexo Industrial Dourado" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
-              <p className="text-xs text-[var(--muted-foreground)]">{USER_ROLE_OPTIONS.find((option) => option.value === form.role)?.helper}</p>
+              <Field label={copy.unit}><input value={form.unit} onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value }))} placeholder="Ex.: Complexo Industrial Dourado" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
+              <p className="text-xs text-[var(--muted-foreground)]">{roleOptions.find((option) => option.value === form.role)?.helper}</p>
               {error ? <p className="text-sm font-medium text-[#dc2626]">{error}</p> : null}
               <div className="flex flex-wrap justify-end gap-3 pt-2">
-                {editingId ? <button type="button" onClick={resetForm} className="rounded-xl border border-[var(--panel-border)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Cancelar edição</button> : null}
-                <button type="button" onClick={submit} className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:opacity-95">{editingId ? "Salvar alterações" : "Criar conta"}</button>
+                {editingId ? <button type="button" onClick={resetForm} className="rounded-xl border border-[var(--panel-border)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">{copy.cancelEdit}</button> : null}
+                <button type="button" onClick={submit} className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:opacity-95">{editingId ? copy.saveChanges : copy.create}</button>
               </div>
             </div>
           </section>
@@ -273,7 +390,11 @@ export function SidebarMenu({
   orientation?: NavigationLayout;
   behavior?: NavigationBehavior;
 }) {
+  const { locale } = useLocale();
+  const copy = COPY[locale];
   const pathname = usePathname();
+  const sections = useMemo(() => getDashboardSections(locale), [locale]);
+  const groups = useMemo(() => getDashboardGroups(locale), [locale]);
   const [accounts, setAccounts] = useState<UserAccount[]>([]);
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -307,16 +428,16 @@ export function SidebarMenu({
       <aside className="flex w-full flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-3 py-5 transition-colors md:sticky md:top-0 md:h-screen md:self-start md:w-[270px]">
         <div className="mb-6 px-2">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">PremieRpet</p>
-          <p className="mt-1 text-xs text-[var(--muted-foreground)]">Operações e Estoque</p>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">{copy.appSubtitle}</p>
         </div>
 
         <nav aria-label="Menu principal" className="flex-1 overflow-y-auto pr-1">
           <div className="space-y-5">
-            {DASHBOARD_GROUPS.map((group) => (
+            {groups.map((group) => (
               <section key={group.id}>
                 <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">{group.label}</p>
                 <div className="space-y-1">
-                  {DASHBOARD_SECTIONS.filter((section) => section.group === group.id).map((section) => (
+                  {sections.filter((section) => section.group === group.id).map((section) => (
                     <NavigationLink key={section.id} section={section} pathname={pathname} />
                   ))}
                 </div>
@@ -327,22 +448,22 @@ export function SidebarMenu({
 
         <div className="mt-4 border-t border-[var(--sidebar-border)] pt-4">
           <div className="space-y-1">
-            {DASHBOARD_SECTIONS.filter((section) => section.group === "configuracoes").map((section) => (
+            {sections.filter((section) => section.group === "configuracoes").map((section) => (
               <NavigationLink key={section.id} section={section} pathname={pathname} />
             ))}
           </div>
 
           <button type="button" onClick={() => setIsAccountManagerOpen(true)} className="mt-4 flex w-full items-center gap-3 rounded-2xl bg-[var(--panel-soft)] px-3 py-3 text-left transition hover:bg-[var(--panel)]">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent)]/15 text-sm font-semibold text-[var(--accent)]">{initials(activeAccount?.name ?? "Sem sessão")}</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent)]/15 text-sm font-semibold text-[var(--accent)]">{initials(activeAccount?.name ?? copy.noSession)}</div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-[var(--foreground)]">{activeAccount?.name ?? "Sem sessão ativa"}</p>
-              <p className="truncate text-xs text-[var(--muted-foreground)]">{activeAccount ? `${getUserRoleLabel(activeAccount.role)} · ${activeAccount.unit}` : "Clique para selecionar uma conta"}</p>
+              <p className="truncate text-sm font-medium text-[var(--foreground)]">{activeAccount?.name ?? copy.noActiveSession}</p>
+              <p className="truncate text-xs text-[var(--muted-foreground)]">{activeAccount ? `${getUserRoleLabel(activeAccount.role, locale)} · ${activeAccount.unit}` : copy.clickSelect}</p>
             </div>
           </button>
 
           <button type="button" onClick={() => setActiveAccountId(null)} className="mt-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-[#d74b4b] transition hover:opacity-80">
             <LogoutIcon className="h-4 w-4" />
-            Encerrar sessão
+            {copy.signOut}
           </button>
         </div>
       </aside>
