@@ -3259,7 +3259,7 @@ export function OperationsModuleScreen({ section }: { section: DashboardSection 
 
   return (
     <section className="space-y-8">
-      <Hero section={section} eyebrow="PremieRpet Operations" />
+      <Hero section={section} eyebrow="Fluxy" />
     </section>
   );
 }

@@ -1,14 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#081a3a" />
-  <text
-    x="32"
-    y="39"
-    text-anchor="middle"
-    font-family="Arial, Helvetica, sans-serif"
-    font-size="24"
-    font-weight="700"
-    fill="#7dd3fc"
-  >
-    GS
-  </text>
+  <defs>
+    <linearGradient id="fluxy-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4">
+        <animate attributeName="stop-color" values="#06b6d4;#2563eb;#06b6d4" dur="5s" repeatCount="indefinite" />
+      </stop>
+      <stop offset="100%" stop-color="#2563eb">
+        <animate attributeName="stop-color" values="#2563eb;#14b8a6;#2563eb" dur="5s" repeatCount="indefinite" />
+      </stop>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="16" fill="#061327" />
+
+  <g transform="translate(32 32)">
+    <circle r="21" fill="none" stroke="url(#fluxy-gradient)" stroke-width="3" opacity="0.35" />
+    <path d="M-12 -8h17l-7 8h14l-18 16 6-11h-13z" fill="url(#fluxy-gradient)">
+      <animateTransform attributeName="transform" type="translate" values="0 0; 0 -1.5; 0 0" dur="2.2s" repeatCount="indefinite" />
+    </path>
+    <circle cx="15" cy="-13" r="3" fill="#67e8f9">
+      <animate attributeName="opacity" values="1;0.25;1" dur="1.8s" repeatCount="indefinite" />
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="6s" repeatCount="indefinite" />
+    </circle>
+  </g>
 </svg>

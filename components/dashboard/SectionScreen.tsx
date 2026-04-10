@@ -33,7 +33,7 @@ export function SectionScreen({ section }: SectionScreenProps) {
   return (
     <section className="space-y-8">
       <header className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] px-6 py-8 transition-colors">
-        <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">PremieRpet Operations</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">Fluxy</p>
         <h2 className="mt-3 text-3xl font-bold text-[var(--navy-900)]">{localizedSection.label}</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted-foreground)]">{localizedSection.description}</p>
       </header>

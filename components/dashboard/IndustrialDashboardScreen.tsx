@@ -21,7 +21,7 @@ import {
 
 const COPY = {
   "pt-BR": {
-    eyebrow: "PremieRpet Operations",
+    eyebrow: "Fluxy",
     title: "Painel Industrial",
     description: "Visão consolidada da produção liberada, ocupação de áreas, transferências internas e fluxo entre fábrica, expedição, quality hold e centros de distribuição.",
     recordMovement: "Registrar movimentação",
@@ -63,7 +63,7 @@ const COPY = {
     byUser: "Por",
   },
   "en-US": {
-    eyebrow: "PremieRpet Operations",
+    eyebrow: "Fluxy",
     title: "Industrial Dashboard",
     description: "Consolidated view of released production, area occupancy, internal transfers and flow between factory, shipping, quality hold and distribution centers.",
     recordMovement: "Record movement",
@@ -105,7 +105,7 @@ const COPY = {
     byUser: "By",
   },
   "es-ES": {
-    eyebrow: "PremieRpet Operations",
+    eyebrow: "Fluxy",
     title: "Panel Industrial",
     description: "Vista consolidada de la producción liberada, ocupación de áreas, transferencias internas y flujo entre fábrica, expedición, quality hold y centros de distribución.",
     recordMovement: "Registrar movimiento",
