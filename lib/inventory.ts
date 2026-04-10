@@ -3,6 +3,7 @@ import {
   loadLanguagePreference,
   type LanguagePreference,
 } from "@/lib/ui-preferences";
+import { dispatchErpDataEvent } from "@/lib/app-events";
 
 export type LocationType = "Fábrica" | "Centro de Distribuição" | "Expedição" | "Qualidade";
 export type LocationStatus = "Ativa" | "Inativa" | "Em manutenção";
@@ -582,6 +583,7 @@ export function loadLocations() {
 
 export function saveLocations(locations: LocationItem[]) {
   window.localStorage.setItem(LOCATIONS_STORAGE_KEY, JSON.stringify(locations));
+  dispatchErpDataEvent();
 }
 
 export function loadMovements() {
@@ -655,6 +657,7 @@ export function loadMovements() {
 
 export function saveMovements(movements: MovementItem[]) {
   window.localStorage.setItem(MOVEMENTS_STORAGE_KEY, JSON.stringify(movements));
+  dispatchErpDataEvent();
 }
 
 export function getLocationUsedCapacity(locationId: string, movements: MovementItem[]) {
