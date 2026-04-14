@@ -4,6 +4,10 @@ import {
   type LanguagePreference,
 } from "@/lib/ui-preferences";
 import { dispatchErpDataEvent } from "@/lib/app-events";
+import {
+  persistResourceToBackendInBackground,
+  syncResourceFromBackendInBackground,
+} from "@/lib/erp-remote-sync";
 
 export type LocationType = "Fábrica" | "Centro de Distribuição" | "Expedição" | "Qualidade";
 export type LocationStatus = "Ativa" | "Inativa" | "Em manutenção";
@@ -537,6 +541,11 @@ function isTransferPriority(value: unknown): value is TransferPriority {
 }
 
 export function loadLocations() {
+  if (typeof window === "undefined") {
+    return INITIAL_LOCATIONS;
+  }
+
+  syncResourceFromBackendInBackground("inventory.locations");
   const raw = window.localStorage.getItem(LOCATIONS_STORAGE_KEY);
 
   if (!raw) {
@@ -584,9 +593,15 @@ export function loadLocations() {
 export function saveLocations(locations: LocationItem[]) {
   window.localStorage.setItem(LOCATIONS_STORAGE_KEY, JSON.stringify(locations));
   dispatchErpDataEvent();
+  persistResourceToBackendInBackground("inventory.locations", locations);
 }
 
 export function loadMovements() {
+  if (typeof window === "undefined") {
+    return INITIAL_MOVEMENTS;
+  }
+
+  syncResourceFromBackendInBackground("inventory.movements");
   const raw = window.localStorage.getItem(MOVEMENTS_STORAGE_KEY);
 
   if (!raw) {
@@ -658,6 +673,7 @@ export function loadMovements() {
 export function saveMovements(movements: MovementItem[]) {
   window.localStorage.setItem(MOVEMENTS_STORAGE_KEY, JSON.stringify(movements));
   dispatchErpDataEvent();
+  persistResourceToBackendInBackground("inventory.movements", movements);
 }
 
 export function getLocationUsedCapacity(locationId: string, movements: MovementItem[]) {

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type JSX } from "react";
 
+import { USER_ACCOUNTS_EVENT } from "@/lib/app-events";
 import { useLocale } from "@/components/providers/LocaleProvider";
 import {
   DEFAULT_SECTION_ID,
@@ -12,17 +13,14 @@ import {
   type DashboardSection,
 } from "@/lib/dashboard-sections";
 import {
-  createUserAccountId,
+  clearCachedUserAccounts,
   getUserRoleLabel,
   getUserRoleOptions,
   getUserStatusLabel,
   getUserStatusOptions,
-  loadActiveLoginUsername,
-  loadActiveUserAccountId,
   loadUserAccounts,
-  saveActiveUserAccountId,
+  normalizeLoginUsername,
   saveUserAccounts,
-  verifyActiveSessionPassword,
   type UserAccount,
   type UserRole,
   type UserStatus,
@@ -31,18 +29,35 @@ import type { NavigationBehavior, NavigationLayout } from "@/lib/ui-preferences"
 
 type AccountFormState = {
   name: string;
+  username: string;
   email: string;
   role: UserRole;
   unit: string;
   status: UserStatus;
+  password: string;
+  confirmPassword: string;
+};
+
+type AuthSessionResponse = {
+  authenticated?: boolean;
+  account?: UserAccount | null;
+};
+
+type ManagedAccountsResponse = {
+  accounts?: UserAccount[];
+  account?: UserAccount | null;
+  error?: string;
 };
 
 const EMPTY_ACCOUNT_FORM: AccountFormState = {
   name: "",
+  username: "",
   email: "",
   role: "operador",
   unit: "",
   status: "ativo",
+  password: "",
+  confirmPassword: "",
 };
 
 const COPY = {
@@ -69,6 +84,8 @@ const COPY = {
   },
 } as const;
 
+const MIN_PASSWORD_LENGTH = 8;
+
 function roleLevel(role: UserRole) {
   if (role === "administrador") return 4;
   if (role === "gestor") return 3;
@@ -85,6 +102,35 @@ function initials(name: string) {
       .map((part) => part[0]?.toUpperCase() ?? "")
       .join("") || "US"
   );
+}
+
+function areAccountsEqual(current: UserAccount[], next: UserAccount[]) {
+  if (current.length !== next.length) {
+    return false;
+  }
+
+  return current.every((account, index) => {
+    const nextAccount = next[index];
+
+    return (
+      nextAccount !== undefined &&
+      account.id === nextAccount.id &&
+      account.name === nextAccount.name &&
+      account.username === nextAccount.username &&
+      account.email === nextAccount.email &&
+      account.role === nextAccount.role &&
+      account.unit === nextAccount.unit &&
+      account.status === nextAccount.status
+    );
+  });
+}
+
+function resolveActiveAccountId(accounts: UserAccount[], candidateId: string | null) {
+  if (!candidateId) {
+    return null;
+  }
+
+  return accounts.some((account) => account.id === candidateId && account.status === "ativo") ? candidateId : null;
 }
 
 function getHref(sectionId: string) {
@@ -133,6 +179,9 @@ function FileIcon() {
 function HistoryIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 shrink-0"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /></svg>;
 }
+function TraceabilityIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 shrink-0"><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="6.5" r="2.5" /><circle cx="12" cy="17.5" r="2.5" /><path d="M8.6 7.9 10.5 9.3" /><path d="M15.4 7.9 13.5 9.3" /><path d="M11.2 15.1 8 8.8" /><path d="M12.8 15.1 16 8.8" /></svg>;
+}
 function RocketIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 shrink-0"><path d="M14 4c3.5 0 6 2.5 6 6-3.5 0-6-2.5-6-6Z" /><path d="m5 19 4.5-4.5M9 10l5 5M7 12c-.8-2.6-.3-5.6 2-7 1.4 2.9.8 6.1-1 8" /><path d="M12 17c2.6.8 5.6.3 7-2-2.9-1.4-6.1-.8-8 1" /></svg>;
 }
@@ -146,6 +195,7 @@ const SECTION_ICONS: Record<string, () => JSX.Element> = {
   dashboard: DashboardIcon,
   notificacoes: BellIcon,
   pendencias: ClipboardIcon,
+  rastreabilidade: TraceabilityIcon,
   produtos: BoxIcon,
   movimentacoes: MoveIcon,
   "estoque-baixo": WarningIcon,
@@ -192,14 +242,14 @@ function NavigationLink({ section, pathname }: { section: DashboardSection; path
 function AccountManager({
   accounts,
   activeAccount,
-  setAccounts,
-  setActiveAccountId,
+  onAccountsChange,
+  onActiveAccountChange,
   onClose,
 }: {
   accounts: UserAccount[];
   activeAccount: UserAccount | null;
-  setAccounts: (accounts: UserAccount[]) => void;
-  setActiveAccountId: (id: string | null) => void;
+  onAccountsChange: (accounts: UserAccount[]) => void;
+  onActiveAccountChange: (id: string | null) => void;
   onClose: () => void;
 }) {
   const { locale } = useLocale();
@@ -238,26 +288,6 @@ function AccountManager({
     return roleLevel(account.role) < roleLevel(activeAccount.role);
   }
 
-  function authorizeChanges() {
-    if (!canViewOthers) {
-      setError("Sua conta nao tem permissao para gerenciar outros perfis.");
-      return false;
-    }
-    if (!loadActiveLoginUsername()) {
-      setError("Entre novamente para liberar alteracoes nas contas.");
-      return false;
-    }
-    if (!securityPassword.trim()) {
-      setError("Informe sua senha atual para continuar.");
-      return false;
-    }
-    if (!verifyActiveSessionPassword(securityPassword)) {
-      setError("Senha atual invalida.");
-      return false;
-    }
-    return true;
-  }
-
   function resetForm() {
     setEditingId(null);
     setForm({ ...EMPTY_ACCOUNT_FORM, role: allowedRoles[0]?.value ?? "operador" });
@@ -272,48 +302,101 @@ function AccountManager({
     setEditingId(account.id);
     setForm({
       name: account.name,
+      username: account.username,
       email: account.email,
       role: account.role,
       unit: account.unit,
       status: account.status,
+      password: "",
+      confirmPassword: "",
     });
     setError("");
   }
 
-  function handleSubmit() {
-    if (!form.name.trim() || !form.email.trim() || !form.unit.trim()) {
-      setError("Preencha nome, e-mail e unidade.");
+  async function handleSubmit() {
+    const normalizedUsername = normalizeLoginUsername(form.username);
+    const trimmedPassword = form.password.trim();
+
+    if (!form.name.trim() || !normalizedUsername || !form.email.trim() || !form.unit.trim()) {
+      setError("Preencha nome, usuario, e-mail e unidade.");
       return;
     }
-    if (accounts.some((account) => account.email.toLowerCase() === form.email.trim().toLowerCase() && account.id !== editingId)) {
+    if (!securityPassword.trim()) {
+      setError("Informe sua senha atual para continuar.");
+      return;
+    }
+    if (
+      accounts.some(
+        (account) =>
+          account.email.toLowerCase() === form.email.trim().toLowerCase() && account.id !== editingId,
+      )
+    ) {
       setError("Ja existe uma conta com esse e-mail.");
+      return;
+    }
+    if (
+      accounts.some(
+        (account) => account.username.toLowerCase() === normalizedUsername && account.id !== editingId,
+      )
+    ) {
+      setError("Ja existe uma conta com esse usuario de acesso.");
       return;
     }
     if (!allowedRoles.some((option) => option.value === form.role)) {
       setError("Seu perfil nao pode criar ou promover essa credencial.");
       return;
     }
-    if (!authorizeChanges()) return;
+    if (trimmedPassword.length > 0 && trimmedPassword.length < MIN_PASSWORD_LENGTH) {
+      setError(`A nova senha precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`);
+      return;
+    }
+    if (!editingId && trimmedPassword.length === 0) {
+      setError("Defina uma senha para a nova conta.");
+      return;
+    }
+    if (trimmedPassword !== form.confirmPassword.trim()) {
+      setError("A confirmacao da senha nao confere.");
+      return;
+    }
 
-    const nextAccount: UserAccount = {
-      id: editingId ?? (createUserAccountId(form.name) || `conta-${Date.now()}`),
+    const accountPayload = {
       name: form.name.trim(),
+      username: normalizedUsername,
       email: form.email.trim(),
       role: form.role,
       unit: form.unit.trim(),
       status: form.status,
     };
 
-    setAccounts(
-      editingId
-        ? accounts.map((account) => (account.id === editingId ? nextAccount : account))
-        : [nextAccount, ...accounts],
-    );
-    setSecurityPassword("");
-    resetForm();
+    try {
+      const endpoint = editingId ? `/api/auth/accounts/${encodeURIComponent(editingId)}` : "/api/auth/accounts";
+      const response = await fetch(endpoint, {
+        method: editingId ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: securityPassword,
+          password: trimmedPassword.length > 0 ? trimmedPassword : undefined,
+          account: accountPayload,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as ManagedAccountsResponse | null;
+
+      if (!response.ok || !Array.isArray(payload?.accounts)) {
+        setError(payload?.error ?? "Nao foi possivel salvar a conta agora.");
+        return;
+      }
+
+      onAccountsChange(payload.accounts);
+      setSecurityPassword("");
+      resetForm();
+    } catch {
+      setError("Nao foi possivel salvar a conta agora.");
+    }
   }
 
-  function handleDelete(account: UserAccount) {
+  async function handleDelete(account: UserAccount) {
     if (activeAccount?.id === account.id) {
       setError("Troque a conta ativa antes de excluir.");
       return;
@@ -322,9 +405,34 @@ function AccountManager({
       setError("Sua conta nao pode excluir esse perfil.");
       return;
     }
-    if (!authorizeChanges()) return;
-    setAccounts(accounts.filter((item) => item.id !== account.id));
-    setSecurityPassword("");
+    if (!securityPassword.trim()) {
+      setError("Informe sua senha atual para continuar.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/auth/accounts/${encodeURIComponent(account.id)}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: securityPassword,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as ManagedAccountsResponse | null;
+
+      if (!response.ok || !Array.isArray(payload?.accounts)) {
+        setError(payload?.error ?? "Nao foi possivel excluir a conta agora.");
+        return;
+      }
+
+      onAccountsChange(payload.accounts);
+      setSecurityPassword("");
+      resetForm();
+    } catch {
+      setError("Nao foi possivel excluir a conta agora.");
+    }
   }
 
   return (
@@ -357,6 +465,7 @@ function AccountManager({
                         {activeAccount?.id === account.id ? <span className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[11px] font-semibold text-white">Conta ativa</span> : null}
                         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{getUserRoleLabel(account.role, locale)}</span>
                       </div>
+                      <p className="mt-1 text-xs font-medium text-[var(--accent)]">@{account.username}</p>
                       <p className="mt-1 text-sm text-[var(--muted-foreground)]">{account.email}</p>
                       <p className="mt-1 text-xs text-[var(--muted-foreground)]">{account.unit} · {getUserStatusLabel(account.status, locale)}</p>
                     </div>
@@ -366,14 +475,14 @@ function AccountManager({
                     <div className="flex flex-wrap gap-2">
                       {activeAccount?.id !== account.id ? <button type="button" disabled className="cursor-not-allowed rounded-xl bg-slate-200 px-3 py-2 text-xs font-semibold text-slate-500">Trocar apos sair</button> : null}
                       {canManageTarget(account) ? <button type="button" onClick={() => handleEdit(account)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button> : null}
-                      {canManageTarget(account) ? <button type="button" onClick={() => handleDelete(account)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">Excluir</button> : null}
+                      {canManageTarget(account) ? <button type="button" onClick={() => { void handleDelete(account); }} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">Excluir</button> : null}
                     </div>
                   ) : null}
                 </div>
               </article>
             ))}
 
-            <button type="button" onClick={() => setActiveAccountId(null)} className="inline-flex items-center gap-2 px-1 py-2 text-sm font-semibold text-[#d74b4b] transition hover:opacity-80">
+            <button type="button" onClick={() => onActiveAccountChange(null)} className="inline-flex items-center gap-2 px-1 py-2 text-sm font-semibold text-[#d74b4b] transition hover:opacity-80">
               <LogoutIcon />
               Encerrar sessao atual
             </button>
@@ -386,18 +495,23 @@ function AccountManager({
                 <h3 className="mt-2 text-lg font-semibold text-[var(--navy-900)]">{editingId ? "Atualize os dados do perfil" : "Cadastre um novo perfil de acesso"}</h3>
                 <div className="mt-5 space-y-4">
                   <Field label="Nome"><input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Supervisao de Expedicao" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
+                  <Field label="Usuario"><input value={form.username} onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))} placeholder="Ex.: supervisao.expedicao" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
                   <Field label="E-mail"><input value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="conta@premierpet.com.br" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
                   <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Perfil"><select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as UserRole }))} className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]">{allowedRoles.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
                     <Field label="Status"><select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as UserStatus }))} className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]">{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
                   </div>
                   <Field label="Unidade / area"><input value={form.unit} onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value }))} placeholder="Ex.: Complexo Industrial Dourado" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
-                  <Field label="Senha atual"><input type="password" value={securityPassword} onChange={(event) => setSecurityPassword(event.target.value)} placeholder="Confirme sua senha para autorizar mudancas" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
-                  <p className="text-xs text-[var(--muted-foreground)]">Administrador cria qualquer perfil. Gestor so cria operador e consulta.</p>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label={editingId ? "Nova senha" : "Senha de acesso"}><input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} placeholder={editingId ? "Preencha so se quiser redefinir" : "Defina a senha da conta"} className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
+                    <Field label="Confirmar senha"><input type="password" value={form.confirmPassword} onChange={(event) => setForm((current) => ({ ...current, confirmPassword: event.target.value }))} placeholder="Repita a senha informada" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
+                  </div>
+                  <Field label="Sua senha atual"><input type="password" value={securityPassword} onChange={(event) => setSecurityPassword(event.target.value)} placeholder="Confirme sua senha para autorizar mudancas" className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]" /></Field>
+                  <p className="text-xs text-[var(--muted-foreground)]">Administrador cria qualquer perfil. Gestor so cria operador e consulta. Senhas novas precisam ter pelo menos 8 caracteres.</p>
                   {error ? <p className="text-sm font-medium text-rose-600">{error}</p> : null}
                   <div className="flex flex-wrap justify-end gap-3 pt-2">
                     {editingId ? <button type="button" onClick={resetForm} className="rounded-xl border border-[var(--panel-border)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Cancelar edicao</button> : null}
-                    <button type="button" onClick={handleSubmit} className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:opacity-95">{editingId ? "Salvar alteracoes" : "Criar conta"}</button>
+                     <button type="button" onClick={() => { void handleSubmit(); }} className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:opacity-95">{editingId ? "Salvar alteracoes" : "Criar conta"}</button>
                   </div>
                 </div>
               </>
@@ -421,6 +535,7 @@ export function SidebarMenu({
   orientation?: NavigationLayout;
   behavior?: NavigationBehavior;
 }) {
+  const router = useRouter();
   const { locale } = useLocale();
   const copy = COPY[locale];
   const pathname = usePathname();
@@ -428,35 +543,100 @@ export function SidebarMenu({
   const groups = useMemo(() => getDashboardGroups(locale), [locale]);
   const [accounts, setAccounts] = useState<UserAccount[]>([]);
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
   const [isAccountManagerOpen, setIsAccountManagerOpen] = useState(false);
 
   useEffect(() => {
-    const sync = () => {
-      const nextAccounts = loadUserAccounts();
-      const storedActiveId = loadActiveUserAccountId();
-      const nextActiveId =
-        storedActiveId && nextAccounts.some((account) => account.id === storedActiveId && account.status === "ativo")
-          ? storedActiveId
-          : null;
+    let isMounted = true;
 
-      setAccounts(nextAccounts);
-      setActiveAccountId(nextActiveId);
-      setIsLoaded(true);
+    const sync = async () => {
+      let nextAccounts = loadUserAccounts();
+      let nextActiveId: string | null = null;
+
+      try {
+        const response = await fetch("/api/auth/session", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (response.ok) {
+          const payload = (await response.json()) as AuthSessionResponse;
+          const sessionAccount = payload.account ?? null;
+
+          if (
+            sessionAccount &&
+            !nextAccounts.some((account) => account.id === sessionAccount.id)
+          ) {
+            nextAccounts = [sessionAccount, ...nextAccounts];
+          }
+
+          nextActiveId = resolveActiveAccountId(nextAccounts, payload.account?.id ?? null);
+        } else if (response.status === 401) {
+          nextAccounts = [];
+        }
+      } catch {
+        nextActiveId = null;
+      }
+
+      if (!isMounted) {
+        return;
+      }
+
+      setAccounts((current) => (areAccountsEqual(current, nextAccounts) ? current : nextAccounts));
+      setActiveAccountId((current) => (current === nextActiveId ? current : nextActiveId));
     };
 
-    sync();
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
+    const handleSyncEvent = () => {
+      void sync();
+    };
+
+    void sync();
+    window.addEventListener("storage", handleSyncEvent);
+    window.addEventListener(USER_ACCOUNTS_EVENT, handleSyncEvent);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("storage", handleSyncEvent);
+      window.removeEventListener(USER_ACCOUNTS_EVENT, handleSyncEvent);
+    };
   }, []);
 
-  useEffect(() => {
-    if (isLoaded) saveUserAccounts(accounts);
-  }, [accounts, isLoaded]);
+  function handleActiveAccountChange(nextActiveAccountId: string | null) {
+    const resolvedActiveAccountId = resolveActiveAccountId(accounts, nextActiveAccountId);
 
-  useEffect(() => {
-    if (isLoaded) saveActiveUserAccountId(activeAccountId);
-  }, [activeAccountId, isLoaded]);
+    setActiveAccountId((current) => (current === resolvedActiveAccountId ? current : resolvedActiveAccountId));
+
+    if (resolvedActiveAccountId !== null) {
+      return;
+    }
+
+    clearCachedUserAccounts();
+    void fetch("/api/auth/logout", {
+      method: "POST",
+    }).finally(() => {
+      router.replace("/login");
+      router.refresh();
+    });
+  }
+
+  function handleAccountsChange(nextAccounts: UserAccount[]) {
+    const resolvedActiveAccountId = resolveActiveAccountId(nextAccounts, activeAccountId);
+
+    setAccounts((current) => (areAccountsEqual(current, nextAccounts) ? current : nextAccounts));
+    saveUserAccounts(nextAccounts);
+
+    if (resolvedActiveAccountId !== activeAccountId) {
+      setActiveAccountId(resolvedActiveAccountId);
+
+      if (resolvedActiveAccountId === null) {
+        clearCachedUserAccounts();
+        void fetch("/api/auth/logout", {
+          method: "POST",
+        }).finally(() => {
+          router.replace("/login");
+          router.refresh();
+        });
+      }
+    }
+  }
 
   const activeAccount = useMemo(
     () => accounts.find((account) => account.id === activeAccountId) ?? null,
@@ -505,7 +685,7 @@ export function SidebarMenu({
             </div>
           </button>
 
-          <button type="button" onClick={() => setActiveAccountId(null)} className="mt-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-[#d74b4b] transition hover:opacity-80">
+          <button type="button" onClick={() => handleActiveAccountChange(null)} className="mt-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-[#d74b4b] transition hover:opacity-80">
             <LogoutIcon />
             {copy.signOut}
           </button>
@@ -516,8 +696,8 @@ export function SidebarMenu({
         <AccountManager
           accounts={accounts}
           activeAccount={activeAccount}
-          setAccounts={setAccounts}
-          setActiveAccountId={setActiveAccountId}
+          onAccountsChange={handleAccountsChange}
+          onActiveAccountChange={handleActiveAccountChange}
           onClose={() => setIsAccountManagerOpen(false)}
         />
       ) : null}

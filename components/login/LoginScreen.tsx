@@ -1,104 +1,368 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
-import {
-  authenticateTestUser,
-  hasActiveUserSession,
-  saveActiveLoginUsername,
-  saveActiveUserAccountId,
-} from "@/lib/user-accounts";
+import { clearCachedUserAccounts, clearLegacyClientAuthState } from "@/lib/user-accounts";
 
-export function LoginScreen({ nextPath }: { nextPath: string }) {
+type LoginScreenProps = {
+  nextPath: string;
+  resetToken?: string | null;
+};
+
+type ForgotPasswordResponse = {
+  error?: string;
+  message?: string;
+  debugResetUrl?: string;
+};
+
+type ResetPasswordResponse = {
+  error?: string;
+  message?: string;
+};
+
+type ScreenMode = "login" | "forgot" | "reset";
+
+export function LoginScreen({ nextPath, resetToken }: LoginScreenProps) {
   const router = useRouter();
+  const [mode, setMode] = useState<ScreenMode>(resetToken ? "reset" : "login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [forgotIdentifier, setForgotIdentifier] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [forgotError, setForgotError] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [forgotMessage, setForgotMessage] = useState("");
+  const [resetMessage, setResetMessage] = useState("");
+  const [debugResetUrl, setDebugResetUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeResetToken, setActiveResetToken] = useState(resetToken ?? "");
 
   useEffect(() => {
-    if (hasActiveUserSession()) {
-      router.replace(nextPath);
-    }
-  }, [nextPath, router]);
+    clearLegacyClientAuthState();
+    clearCachedUserAccounts();
+  }, []);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    if (resetToken) {
+      setActiveResetToken(resetToken);
+      setMode("reset");
+    }
+  }, [resetToken]);
+
+  const title = useMemo(() => {
+    if (mode === "forgot") return "Recuperar acesso";
+    if (mode === "reset") return "Redefinir senha";
+    return "Fluxy";
+  }, [mode]);
+
+  const subtitle = useMemo(() => {
+    if (mode === "forgot") return "Solicite um link seguro para redefinir sua senha";
+    if (mode === "reset") return "Defina uma nova senha para voltar ao sistema";
+    return "Faca login para continuar";
+  }, [mode]);
+
+  function goToLoginMode() {
+    setMode("login");
+    setForgotError("");
+    setResetError("");
+    setForgotMessage("");
+    setResetMessage("");
+    setDebugResetUrl("");
+    setResetPassword("");
+    setResetPasswordConfirm("");
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError("");
+    setLoginError("");
 
     if (!username.trim() || !password.trim()) {
-      setError("Informe usuario e senha.");
+      setLoginError("Informe usuario e senha.");
       return;
     }
 
     setIsSubmitting(true);
 
-    const account = authenticateTestUser(username, password);
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username,
+          password,
+        }),
+      });
 
-    if (!account) {
-      setError("Credenciais invalidas. Use um dos acessos de teste.");
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        setLoginError(payload?.error ?? "Nao foi possivel concluir o login.");
+        return;
+      }
+
+      router.replace(nextPath);
+      router.refresh();
+    } catch {
+      setLoginError("Nao foi possivel conectar ao backend de autenticacao.");
+    } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleForgotPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setForgotError("");
+    setForgotMessage("");
+    setDebugResetUrl("");
+
+    if (!forgotIdentifier.trim()) {
+      setForgotError("Informe seu usuario ou e-mail.");
       return;
     }
 
-    saveActiveLoginUsername(username);
-    saveActiveUserAccountId(account.id);
-    router.replace(nextPath);
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          identifier: forgotIdentifier,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as ForgotPasswordResponse | null;
+
+      if (!response.ok) {
+        setForgotError(payload?.error ?? "Nao foi possivel solicitar a redefinicao agora.");
+        return;
+      }
+
+      setForgotMessage(payload?.message ?? "Se a conta existir, o processo de redefinicao foi iniciado.");
+      setDebugResetUrl(payload?.debugResetUrl ?? "");
+    } catch {
+      setForgotError("Nao foi possivel solicitar a redefinicao agora.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleResetPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setResetError("");
+    setResetMessage("");
+
+    if (!activeResetToken) {
+      setResetError("Token de redefinicao ausente ou invalido.");
+      return;
+    }
+
+    if (!resetPassword.trim() || !resetPasswordConfirm.trim()) {
+      setResetError("Informe e confirme a nova senha.");
+      return;
+    }
+
+    if (resetPassword !== resetPasswordConfirm) {
+      setResetError("A confirmacao da senha nao confere.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token: activeResetToken,
+          password: resetPassword,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as ResetPasswordResponse | null;
+
+      if (!response.ok) {
+        setResetError(payload?.error ?? "Nao foi possivel redefinir a senha agora.");
+        return;
+      }
+
+      setActiveResetToken("");
+      setResetPassword("");
+      setResetPasswordConfirm("");
+      setResetMessage(payload?.message ?? "Senha redefinida com sucesso.");
+      setMode("login");
+    } catch {
+      setResetError("Nao foi possivel redefinir a senha agora.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-200 px-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-[0_10px_35px_rgba(15,23,42,0.14)]">
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-xl text-white">
-          →
+          â†’
         </div>
 
-        <h1 className="text-2xl font-semibold text-slate-900">Fluxy</h1>
-        <p className="mt-2 text-sm text-slate-500">Faca login para continuar</p>
+        <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
+        <p className="mt-2 text-sm text-slate-500">{subtitle}</p>
 
-        <form className="mt-6 space-y-4 text-left" onSubmit={handleSubmit}>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Usuario</span>
-            <input
-              type="text"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="Digite seu usuario"
-              className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-600"
-            />
-          </label>
+        {resetMessage ? <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resetMessage}</p> : null}
 
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Senha</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Digite sua senha"
-              className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-600"
-            />
-          </label>
+        {mode === "login" ? (
+          <form className="mt-6 space-y-4 text-left" onSubmit={handleSubmit}>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Usuario ou e-mail</span>
+              <input
+                type="text"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="Digite seu usuario ou e-mail"
+                className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-600"
+              />
+            </label>
 
-          {error ? <p className="text-sm font-medium text-rose-600">{error}</p> : null}
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Senha</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Digite sua senha"
+                className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-600"
+              />
+            </label>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {isSubmitting ? "Entrando..." : "Entrar"}
-          </button>
-        </form>
+            {loginError ? <p className="text-sm font-medium text-rose-600">{loginError}</p> : null}
 
-        <div className="mt-5 rounded-lg bg-slate-100 p-3 text-left text-xs text-slate-700">
-          <strong>Usuarios de teste:</strong>
-          <ul className="mt-2 list-disc space-y-1 pl-5">
-            <li>admin / admin123 acessa o perfil administrador</li>
-            <li>joao / 123456 acessa o perfil operador</li>
-            <li>maria / 123456 acessa o perfil gestor</li>
-          </ul>
-        </div>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSubmitting ? "Entrando..." : "Entrar"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMode("forgot");
+                setLoginError("");
+              }}
+              className="w-full text-sm font-medium text-blue-700 transition hover:opacity-80"
+            >
+              Esqueci minha senha
+            </button>
+          </form>
+        ) : null}
+
+        {mode === "forgot" ? (
+          <form className="mt-6 space-y-4 text-left" onSubmit={handleForgotPassword}>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Usuario ou e-mail</span>
+              <input
+                type="text"
+                value={forgotIdentifier}
+                onChange={(event) => setForgotIdentifier(event.target.value)}
+                placeholder="Informe sua conta para recuperar o acesso"
+                className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-600"
+              />
+            </label>
+
+            {forgotError ? <p className="text-sm font-medium text-rose-600">{forgotError}</p> : null}
+            {forgotMessage ? <p className="text-sm text-emerald-700">{forgotMessage}</p> : null}
+            {debugResetUrl ? (
+              <a href={debugResetUrl} className="block text-sm font-medium text-blue-700 underline">
+                Abrir link de redefinicao gerado para desenvolvimento
+              </a>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSubmitting ? "Solicitando..." : "Solicitar redefinicao"}
+            </button>
+
+            <button
+              type="button"
+              onClick={goToLoginMode}
+              className="w-full text-sm font-medium text-slate-600 transition hover:opacity-80"
+            >
+              Voltar para o login
+            </button>
+          </form>
+        ) : null}
+
+        {mode === "reset" ? (
+          <form className="mt-6 space-y-4 text-left" onSubmit={handleResetPassword}>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Nova senha</span>
+              <input
+                type="password"
+                value={resetPassword}
+                onChange={(event) => setResetPassword(event.target.value)}
+                placeholder="Defina sua nova senha"
+                className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-600"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Confirmar nova senha</span>
+              <input
+                type="password"
+                value={resetPasswordConfirm}
+                onChange={(event) => setResetPasswordConfirm(event.target.value)}
+                placeholder="Repita a nova senha"
+                className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-600"
+              />
+            </label>
+
+            {resetError ? <p className="text-sm font-medium text-rose-600">{resetError}</p> : null}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSubmitting ? "Redefinindo..." : "Salvar nova senha"}
+            </button>
+
+            <button
+              type="button"
+              onClick={goToLoginMode}
+              className="w-full text-sm font-medium text-slate-600 transition hover:opacity-80"
+            >
+              Voltar para o login
+            </button>
+          </form>
+        ) : null}
+
+        {mode === "login" && process.env.NODE_ENV !== "production" ? (
+          <div className="mt-5 rounded-lg bg-slate-100 p-3 text-left text-xs text-slate-700">
+            <strong>Acessos locais de desenvolvimento:</strong>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>admin / admin123</li>
+              <li>joao / 123456</li>
+              <li>maria / 123456</li>
+            </ul>
+          </div>
+        ) : null}
+
+        {mode === "login" && process.env.NODE_ENV === "production" ? (
+          <p className="mt-5 text-xs text-slate-500">
+            Use a conta provisionada pela administracao do sistema.
+          </p>
+        ) : null}
       </div>
 
       <button
