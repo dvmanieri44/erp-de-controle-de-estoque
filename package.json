@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test:server": "node --conditions=react-server --import tsx --test --test-concurrency=1 tests/**/*.test.ts",
     "backup:local-state": "node scripts/backup-server-state.mjs",
     "quality:agent": "node scripts/quality-agent.mjs",
     "quality:check": "npm run lint && npm run quality:agent"
@@ -16,7 +17,8 @@
     "firebase-admin": "^13.8.0",
     "next": "^15.2.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",
@@ -27,6 +29,7 @@
     "eslint": "^9.20.1",
     "eslint-config-next": "^15.2.2",
     "tailwindcss": "^4.0.17",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.2"
   }
 }

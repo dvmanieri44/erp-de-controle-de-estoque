@@ -4,10 +4,6 @@ import {
   type LanguagePreference,
 } from "@/lib/ui-preferences";
 import { dispatchErpDataEvent } from "@/lib/app-events";
-import {
-  persistResourceToBackendInBackground,
-  syncResourceFromBackendInBackground,
-} from "@/lib/erp-remote-sync";
 
 export type LocationType = "Fábrica" | "Centro de Distribuição" | "Expedição" | "Qualidade";
 export type LocationStatus = "Ativa" | "Inativa" | "Em manutenção";
@@ -27,9 +23,16 @@ export type LocationItem = {
   status: LocationStatus;
 };
 
+export type VersionedLocationItem = LocationItem & {
+  version?: number;
+  updatedAt?: string | null;
+};
+
 export type MovementItem = {
   id: string;
   product: string;
+  productId?: string;
+  lotCode?: string;
   type: MovementType;
   quantity: number;
   reason: string;
@@ -47,8 +50,136 @@ export type MovementItem = {
   receivedAt?: string;
 };
 
+export type VersionedMovementItem = MovementItem & {
+  version?: number;
+};
+
+export type ProductReferenceItem = {
+  sku: string;
+  product: string;
+};
+
+export type LocationStockBalanceItem = {
+  locationId: string;
+  balance: number;
+};
+
+export type LocationStockBalanceMap = Map<string, number>;
+
+export type DerivedLotLocationConfidence = "high" | "medium" | "low";
+
+export type LotDerivedLocationItem = {
+  stableLocationId: string | null;
+  inTransitToLocationId: string | null;
+  confidence: DerivedLotLocationConfidence;
+  mismatch: boolean;
+};
+
 export const LOCATIONS_STORAGE_KEY = "erp.locations";
 export const MOVEMENTS_STORAGE_KEY = "erp.movements";
+
+const MOVEMENTS_ENDPOINT = "/api/erp/movements";
+const LOCATIONS_ENDPOINT = "/api/erp/locations";
+const LOCATION_STOCK_ENDPOINT = "/api/erp/stock/locations";
+const LOT_LOCATION_ENDPOINT_PREFIX = "/api/erp/stock/lots";
+let movementsSyncPromise: Promise<VersionedMovementItem[]> | null = null;
+let locationsSyncPromise: Promise<VersionedLocationItem[]> | null = null;
+
+type InventoryMovementsListResponse = {
+  items?: unknown;
+  error?: unknown;
+};
+
+type InventoryMovementMutationResponse = {
+  movement?: unknown;
+  error?: unknown;
+  currentVersion?: unknown;
+};
+
+type InventoryLocationsListResponse = {
+  items?: unknown;
+  error?: unknown;
+};
+
+type InventoryLocationMutationResponse = {
+  location?: unknown;
+  locationId?: unknown;
+  error?: unknown;
+  currentVersion?: unknown;
+};
+
+type LocationStockBalancesResponse = {
+  items?: unknown;
+  error?: unknown;
+};
+
+type LotDerivedLocationResponse = {
+  stableLocationId?: unknown;
+  inTransitToLocationId?: unknown;
+  confidence?: unknown;
+  mismatch?: unknown;
+  error?: unknown;
+};
+
+export class MovementRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "MovementRequestError";
+    this.status = status;
+  }
+}
+
+export class MovementVersionConflictError extends MovementRequestError {
+  currentVersion: number;
+
+  constructor(currentVersion: number) {
+    super("VERSION_CONFLICT", 409);
+    this.name = "MovementVersionConflictError";
+    this.currentVersion = currentVersion;
+  }
+}
+
+export class LocationRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "LocationRequestError";
+    this.status = status;
+  }
+}
+
+export class LocationVersionConflictError extends LocationRequestError {
+  currentVersion: number;
+
+  constructor(currentVersion: number) {
+    super("VERSION_CONFLICT", 409);
+    this.name = "LocationVersionConflictError";
+    this.currentVersion = currentVersion;
+  }
+}
+
+export class LocationStockRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "LocationStockRequestError";
+    this.status = status;
+  }
+}
+
+export class LotLocationRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "LotLocationRequestError";
+    this.status = status;
+  }
+}
 
 export const INITIAL_LOCATIONS: LocationItem[] = [
   {
@@ -420,8 +551,41 @@ export function createLocationId(value: string) {
     .replace(/(^-|-$)/g, "");
 }
 
+export function normalizeReferenceText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function normalizeSkuIdentifier(value: string) {
+  return value.trim().toUpperCase();
+}
+
 export function normalizeText(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  return normalizeReferenceText(value);
+}
+
+export function findMatchingProductReference<TProduct extends ProductReferenceItem>(
+  products: readonly TProduct[],
+  value: string,
+) {
+  const normalizedValue = normalizeReferenceText(value);
+  const normalizedSku = normalizeSkuIdentifier(value);
+
+  if (!normalizedValue && !normalizedSku) {
+    return null;
+  }
+
+  return (
+    products.find(
+      (product) =>
+        normalizeReferenceText(product.product) === normalizedValue ||
+        normalizeSkuIdentifier(product.sku) === normalizedSku,
+    ) ?? null
+  );
 }
 
 export function parseCapacity(value: string) {
@@ -540,60 +704,762 @@ function isTransferPriority(value: unknown): value is TransferPriority {
   return value === "baixa" || value === "media" || value === "alta";
 }
 
-export function loadLocations() {
-  if (typeof window === "undefined") {
-    return INITIAL_LOCATIONS;
+function normalizeMovementItem(value: unknown): VersionedMovementItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
   }
 
-  syncResourceFromBackendInBackground("inventory.locations");
+  const item = value as Record<string, unknown>;
+
+  if (
+    typeof item.id !== "string" ||
+    typeof item.product !== "string" ||
+    !isMovementType(item.type) ||
+    typeof item.quantity !== "number" ||
+    typeof item.reason !== "string" ||
+    typeof item.user !== "string" ||
+    typeof item.createdAt !== "string"
+  ) {
+    return null;
+  }
+
+  const type = item.type;
+
+  return {
+    id: item.id,
+    product: item.product,
+    productId: typeof item.productId === "string" ? item.productId : undefined,
+    lotCode: typeof item.lotCode === "string" ? item.lotCode : undefined,
+    type,
+    quantity: item.quantity,
+    reason: item.reason,
+    user: item.user,
+    createdAt: item.createdAt,
+    updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+    locationId: typeof item.locationId === "string" ? item.locationId : undefined,
+    fromLocationId: typeof item.fromLocationId === "string" ? item.fromLocationId : undefined,
+    toLocationId: typeof item.toLocationId === "string" ? item.toLocationId : undefined,
+    notes: typeof item.notes === "string" ? item.notes : undefined,
+    status: isMovementStatus(item.status) ? item.status : "concluida",
+    transferStatus:
+      type === "transferencia"
+        ? isTransferStatus(item.transferStatus)
+          ? item.transferStatus
+          : "recebida"
+        : undefined,
+    priority:
+      type === "transferencia"
+        ? isTransferPriority(item.priority)
+          ? item.priority
+          : "media"
+        : undefined,
+    code:
+      type === "transferencia"
+        ? typeof item.code === "string"
+          ? item.code
+          : buildTransferCode(new Date(item.createdAt))
+        : undefined,
+    receivedAt: typeof item.receivedAt === "string" ? item.receivedAt : undefined,
+    version:
+      typeof item.version === "number" &&
+      Number.isInteger(item.version) &&
+      item.version >= 1
+        ? item.version
+        : undefined,
+  };
+}
+
+function normalizeLocationItem(value: unknown): VersionedLocationItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+  const legacyCapacity = typeof item.capacity === "number" ? item.capacity : null;
+  const capacityTotal =
+    typeof item.capacityTotal === "number" ? item.capacityTotal : legacyCapacity;
+
+  if (
+    typeof item.id !== "string" ||
+    typeof item.name !== "string" ||
+    !isLocationType(item.type) ||
+    typeof item.address !== "string" ||
+    typeof item.manager !== "string" ||
+    typeof capacityTotal !== "number" ||
+    !isLocationStatus(item.status)
+  ) {
+    return null;
+  }
+
+  return {
+    id: item.id,
+    name: item.name,
+    type: item.type,
+    address: item.address,
+    manager: item.manager,
+    capacityTotal,
+    status: item.status,
+    version:
+      typeof item.version === "number" &&
+      Number.isInteger(item.version) &&
+      item.version >= 1
+        ? item.version
+        : undefined,
+    updatedAt:
+      typeof item.updatedAt === "string" || item.updatedAt === null
+        ? item.updatedAt
+        : undefined,
+  };
+}
+
+function normalizeLocationStockBalanceItem(value: unknown): LocationStockBalanceItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+
+  if (typeof item.locationId !== "string" || typeof item.balance !== "number") {
+    return null;
+  }
+
+  return {
+    locationId: item.locationId,
+    balance: item.balance,
+  };
+}
+
+function normalizeLotDerivedLocationItem(value: unknown): LotDerivedLocationItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+
+  if (
+    item.stableLocationId !== null &&
+    item.stableLocationId !== undefined &&
+    typeof item.stableLocationId !== "string"
+  ) {
+    return null;
+  }
+
+  if (
+    item.inTransitToLocationId !== null &&
+    item.inTransitToLocationId !== undefined &&
+    typeof item.inTransitToLocationId !== "string"
+  ) {
+    return null;
+  }
+
+  if (
+    item.confidence !== "high" &&
+    item.confidence !== "medium" &&
+    item.confidence !== "low"
+  ) {
+    return null;
+  }
+
+  if (typeof item.mismatch !== "boolean") {
+    return null;
+  }
+
+  return {
+    stableLocationId:
+      typeof item.stableLocationId === "string" ? item.stableLocationId : null,
+    inTransitToLocationId:
+      typeof item.inTransitToLocationId === "string"
+        ? item.inTransitToLocationId
+        : null,
+    confidence: item.confidence,
+    mismatch: item.mismatch,
+  };
+}
+
+function sortMovements<TValue extends VersionedMovementItem>(movements: TValue[]) {
+  return [...movements].sort((left, right) => {
+    const timestampDiff =
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+
+    if (timestampDiff !== 0) {
+      return timestampDiff;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function readStoredLocations() {
   const raw = window.localStorage.getItem(LOCATIONS_STORAGE_KEY);
 
   if (!raw) {
     return INITIAL_LOCATIONS;
   }
 
-  const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
 
-  if (!Array.isArray(parsed)) {
+    if (!Array.isArray(parsed)) {
+      return INITIAL_LOCATIONS;
+    }
+
+    const locations = parsed
+      .map((item) => normalizeLocationItem(item))
+      .filter((item): item is VersionedLocationItem => item !== null);
+
+    return locations.length > 0 ? locations : INITIAL_LOCATIONS;
+  } catch {
     return INITIAL_LOCATIONS;
   }
+}
 
-  const locations = parsed
-    .map((item) => {
-      const legacyCapacity = typeof item.capacity === "number" ? item.capacity : null;
-      const capacityTotal = typeof item.capacityTotal === "number" ? item.capacityTotal : legacyCapacity;
+function writeStoredLocations(locations: VersionedLocationItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
 
-      if (
-        typeof item.id !== "string" ||
-        typeof item.name !== "string" ||
-        !isLocationType(item.type) ||
-        typeof item.address !== "string" ||
-        typeof item.manager !== "string" ||
-        typeof capacityTotal !== "number" ||
-        !isLocationStatus(item.status)
-      ) {
-        return null;
-      }
+  window.localStorage.setItem(LOCATIONS_STORAGE_KEY, JSON.stringify(locations));
+  dispatchErpDataEvent();
+}
 
-      return {
-        id: item.id,
-        name: item.name,
-        type: item.type,
-        address: item.address,
-        manager: item.manager,
-        capacityTotal,
-        status: item.status,
-      } satisfies LocationItem;
-    })
-    .filter((item): item is LocationItem => item !== null);
+function upsertStoredLocation(location: VersionedLocationItem) {
+  const current = readStoredLocations();
+  writeStoredLocations([
+    location,
+    ...current.filter((item) => item.id !== location.id),
+  ]);
+}
 
+function removeStoredLocation(locationId: string) {
+  writeStoredLocations(
+    readStoredLocations().filter((location) => location.id !== locationId),
+  );
+}
+
+function stripLocationMetadata<
+  TValue extends VersionedLocationItem | Partial<VersionedLocationItem>,
+>(
+  location: TValue,
+) {
+  const payload = { ...location };
+  delete payload.version;
+  delete payload.updatedAt;
+  return payload;
+}
+
+function readStoredMovements() {
+  const raw = window.localStorage.getItem(MOVEMENTS_STORAGE_KEY);
+
+  if (!raw) {
+    return INITIAL_MOVEMENTS;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return INITIAL_MOVEMENTS;
+    }
+
+    return parsed
+      .map((item) => normalizeMovementItem(item))
+      .filter((item): item is MovementItem => item !== null);
+  } catch {
+    return INITIAL_MOVEMENTS;
+  }
+}
+
+function writeStoredMovements(movements: VersionedMovementItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(
+    MOVEMENTS_STORAGE_KEY,
+    JSON.stringify(sortMovements(movements)),
+  );
+  dispatchErpDataEvent();
+}
+
+function upsertStoredMovement(movement: VersionedMovementItem) {
+  const current = readStoredMovements();
+  writeStoredMovements([
+    movement,
+    ...current.filter((item) => item.id !== movement.id),
+  ]);
+}
+
+function removeStoredMovement(movementId: string) {
+  writeStoredMovements(
+    readStoredMovements().filter((movement) => movement.id !== movementId),
+  );
+}
+
+function stripMovementVersion<
+  TValue extends VersionedMovementItem | Partial<VersionedMovementItem>,
+>(
+  movement: TValue,
+) {
+  const payload = { ...movement };
+  delete payload.version;
+  return payload;
+}
+
+function getMovementResponseItems(
+  payload: InventoryMovementsListResponse | InventoryMovementMutationResponse | null,
+) {
+  return payload && "items" in payload ? payload.items : undefined;
+}
+
+function getMovementResponseItem(
+  payload: InventoryMovementsListResponse | InventoryMovementMutationResponse | null,
+) {
+  return payload && "movement" in payload ? payload.movement : undefined;
+}
+
+function getLocationResponseItems(
+  payload: InventoryLocationsListResponse | InventoryLocationMutationResponse | null,
+) {
+  return payload && "items" in payload ? payload.items : undefined;
+}
+
+function getLocationResponseItem(
+  payload: InventoryLocationsListResponse | InventoryLocationMutationResponse | null,
+) {
+  return payload && "location" in payload ? payload.location : undefined;
+}
+
+async function parseMovementApiPayload(response: Response, fallbackMessage: string) {
+  const payload = (await response.json().catch(() => null)) as
+    | InventoryMovementsListResponse
+    | InventoryMovementMutationResponse
+    | null;
+
+  if (response.ok) {
+    return payload;
+  }
+
+  const currentVersion =
+    payload && "currentVersion" in payload ? payload.currentVersion : undefined;
+
+  if (
+    payload &&
+    payload.error === "VERSION_CONFLICT" &&
+    typeof currentVersion === "number"
+  ) {
+    throw new MovementVersionConflictError(currentVersion);
+  }
+
+  const message =
+    payload && typeof payload.error === "string"
+      ? payload.error
+      : fallbackMessage;
+
+  throw new MovementRequestError(message, response.status);
+}
+
+async function parseLocationApiPayload(response: Response, fallbackMessage: string) {
+  const payload = (await response.json().catch(() => null)) as
+    | InventoryLocationsListResponse
+    | InventoryLocationMutationResponse
+    | null;
+
+  if (response.ok) {
+    return payload;
+  }
+
+  const currentVersion =
+    payload && "currentVersion" in payload ? payload.currentVersion : undefined;
+
+  if (
+    payload &&
+    payload.error === "VERSION_CONFLICT" &&
+    typeof currentVersion === "number"
+  ) {
+    throw new LocationVersionConflictError(currentVersion);
+  }
+
+  const message =
+    payload && typeof payload.error === "string"
+      ? payload.error
+      : fallbackMessage;
+
+  throw new LocationRequestError(message, response.status);
+}
+
+async function fetchLocationsFromServer() {
+  const response = await fetch(LOCATIONS_ENDPOINT, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const payload = await parseLocationApiPayload(
+    response,
+    "Nao foi possivel carregar as localizacoes.",
+  );
+  const items = getLocationResponseItems(payload);
+
+  if (!Array.isArray(items)) {
+    throw new LocationRequestError(
+      "Resposta invalida ao carregar as localizacoes.",
+      response.status,
+    );
+  }
+
+  const locations = items
+    .map((item) => normalizeLocationItem(item))
+    .filter((item): item is VersionedLocationItem => item !== null);
+
+  writeStoredLocations(locations);
   return locations.length > 0 ? locations : INITIAL_LOCATIONS;
 }
 
-export function saveLocations(locations: LocationItem[]) {
-  window.localStorage.setItem(LOCATIONS_STORAGE_KEY, JSON.stringify(locations));
-  dispatchErpDataEvent();
-  persistResourceToBackendInBackground("inventory.locations", locations);
+function syncLocationsFromServerInBackground() {
+  if (typeof window === "undefined") {
+    return Promise.resolve(INITIAL_LOCATIONS);
+  }
+
+  if (!locationsSyncPromise) {
+    const nextSync = fetchLocationsFromServer().finally(() => {
+      if (locationsSyncPromise === nextSync) {
+        locationsSyncPromise = null;
+      }
+    });
+    locationsSyncPromise = nextSync;
+  }
+
+  return locationsSyncPromise;
+}
+
+async function fetchMovementsFromServer() {
+  const response = await fetch(MOVEMENTS_ENDPOINT, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const payload = await parseMovementApiPayload(
+    response,
+    "Nao foi possivel carregar as movimentacoes.",
+  );
+  const items = getMovementResponseItems(payload);
+
+  if (!Array.isArray(items)) {
+    throw new MovementRequestError(
+      "Resposta invalida ao carregar as movimentacoes.",
+      response.status,
+    );
+  }
+
+  const movements = items
+    .map((item) => normalizeMovementItem(item))
+    .filter((item): item is MovementItem => item !== null);
+
+  writeStoredMovements(movements);
+  return movements;
+}
+
+function syncMovementsFromServerInBackground() {
+  if (typeof window === "undefined") {
+    return Promise.resolve(INITIAL_MOVEMENTS);
+  }
+
+  if (!movementsSyncPromise) {
+    const nextSync = fetchMovementsFromServer().finally(() => {
+      if (movementsSyncPromise === nextSync) {
+        movementsSyncPromise = null;
+      }
+    });
+    movementsSyncPromise = nextSync;
+  }
+
+  return movementsSyncPromise;
+}
+
+export async function refreshMovements() {
+  if (typeof window === "undefined") {
+    return INITIAL_MOVEMENTS;
+  }
+
+  return syncMovementsFromServerInBackground();
+}
+
+export async function refreshLocations() {
+  if (typeof window === "undefined") {
+    return INITIAL_LOCATIONS;
+  }
+
+  return syncLocationsFromServerInBackground();
+}
+
+export function buildLocationStockBalanceMap(
+  items: LocationStockBalanceItem[],
+): LocationStockBalanceMap {
+  return new Map(
+    items.map((item) => [item.locationId, item.balance] as const),
+  );
+}
+
+export async function fetchLocationStockBalances() {
+  const response = await fetch(LOCATION_STOCK_ENDPOINT, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | LocationStockBalancesResponse
+    | null;
+
+  if (!response.ok) {
+    const message =
+      payload && typeof payload.error === "string"
+        ? payload.error
+        : "Nao foi possivel carregar o saldo por local.";
+
+    throw new LocationStockRequestError(message, response.status);
+  }
+
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new LocationStockRequestError(
+      "Resposta invalida ao carregar o saldo por local.",
+      response.status,
+    );
+  }
+
+  return payload.items
+    .map((item) => normalizeLocationStockBalanceItem(item))
+    .filter((item): item is LocationStockBalanceItem => item !== null);
+}
+
+export async function fetchLotDerivedLocation(lotCode: string) {
+  const response = await fetch(
+    `${LOT_LOCATION_ENDPOINT_PREFIX}/${encodeURIComponent(lotCode)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
+  const payload = (await response.json().catch(() => null)) as
+    | LotDerivedLocationResponse
+    | null;
+
+  if (!response.ok) {
+    const message =
+      payload && typeof payload.error === "string"
+        ? payload.error
+        : "Nao foi possivel carregar a localizacao derivada do lote.";
+
+    throw new LotLocationRequestError(message, response.status);
+  }
+
+  const derivedLocation = normalizeLotDerivedLocationItem(payload);
+
+  if (!derivedLocation) {
+    throw new LotLocationRequestError(
+      "Resposta invalida ao carregar a localizacao derivada do lote.",
+      response.status,
+    );
+  }
+
+  return derivedLocation;
+}
+
+export async function createMovement(movement: VersionedMovementItem) {
+  const response = await fetch(MOVEMENTS_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      movement: stripMovementVersion(movement),
+    }),
+  });
+  const payload = await parseMovementApiPayload(
+    response,
+    "Nao foi possivel criar a movimentacao.",
+  );
+  const createdMovement = normalizeMovementItem(getMovementResponseItem(payload));
+
+  if (!createdMovement) {
+    throw new MovementRequestError(
+      "Resposta invalida ao criar a movimentacao.",
+      response.status,
+    );
+  }
+
+  upsertStoredMovement(createdMovement);
+  return createdMovement;
+}
+
+export async function updateMovement(
+  movementId: string,
+  movementPatch: Partial<VersionedMovementItem>,
+  baseVersion: number,
+) {
+  const response = await fetch(
+    `${MOVEMENTS_ENDPOINT}/${encodeURIComponent(movementId)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        movement: stripMovementVersion(movementPatch),
+        baseVersion,
+      }),
+    },
+  );
+  const payload = await parseMovementApiPayload(
+    response,
+    "Nao foi possivel atualizar a movimentacao.",
+  );
+  const updatedMovement = normalizeMovementItem(getMovementResponseItem(payload));
+
+  if (!updatedMovement) {
+    throw new MovementRequestError(
+      "Resposta invalida ao atualizar a movimentacao.",
+      response.status,
+    );
+  }
+
+  upsertStoredMovement(updatedMovement);
+  return updatedMovement;
+}
+
+export async function deleteMovement(
+  movementId: string,
+  baseVersion: number,
+  options?: {
+    mode?: "delete" | "cancel";
+  },
+) {
+  const response = await fetch(
+    `${MOVEMENTS_ENDPOINT}/${encodeURIComponent(movementId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        baseVersion,
+        ...(options?.mode ? { mode: options.mode } : {}),
+      }),
+    },
+  );
+  const payload = await parseMovementApiPayload(
+    response,
+    "Nao foi possivel excluir a movimentacao.",
+  );
+
+  if (options?.mode === "cancel") {
+    const cancelledMovement = normalizeMovementItem(getMovementResponseItem(payload));
+
+    if (!cancelledMovement) {
+      throw new MovementRequestError(
+        "Resposta invalida ao cancelar a movimentacao.",
+        response.status,
+      );
+    }
+
+    upsertStoredMovement(cancelledMovement);
+    return cancelledMovement;
+  }
+
+  removeStoredMovement(movementId);
+  return null;
+}
+
+export async function createLocation(location: LocationItem) {
+  const response = await fetch(LOCATIONS_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      location: stripLocationMetadata(location),
+    }),
+  });
+  const payload = await parseLocationApiPayload(
+    response,
+    "Nao foi possivel criar a localizacao.",
+  );
+  const createdLocation = normalizeLocationItem(getLocationResponseItem(payload));
+
+  if (!createdLocation) {
+    throw new LocationRequestError(
+      "Resposta invalida ao criar a localizacao.",
+      response.status,
+    );
+  }
+
+  upsertStoredLocation(createdLocation);
+  return createdLocation;
+}
+
+export async function updateLocation(
+  locationId: string,
+  locationPatch: Partial<LocationItem>,
+  baseVersion: number,
+) {
+  const response = await fetch(
+    `${LOCATIONS_ENDPOINT}/${encodeURIComponent(locationId)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        location: stripLocationMetadata(locationPatch),
+        baseVersion,
+      }),
+    },
+  );
+  const payload = await parseLocationApiPayload(
+    response,
+    "Nao foi possivel atualizar a localizacao.",
+  );
+  const updatedLocation = normalizeLocationItem(getLocationResponseItem(payload));
+
+  if (!updatedLocation) {
+    throw new LocationRequestError(
+      "Resposta invalida ao atualizar a localizacao.",
+      response.status,
+    );
+  }
+
+  upsertStoredLocation(updatedLocation);
+  return updatedLocation;
+}
+
+export async function deleteLocation(locationId: string, baseVersion: number) {
+  const response = await fetch(
+    `${LOCATIONS_ENDPOINT}/${encodeURIComponent(locationId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        baseVersion,
+      }),
+    },
+  );
+
+  await parseLocationApiPayload(
+    response,
+    "Nao foi possivel excluir a localizacao.",
+  );
+
+  removeStoredLocation(locationId);
+  return null;
+}
+
+export function loadLocations() {
+  if (typeof window === "undefined") {
+    return INITIAL_LOCATIONS;
+  }
+
+  void syncLocationsFromServerInBackground().catch(() => {
+    return;
+  });
+
+  return readStoredLocations();
 }
 
 export function loadMovements() {
@@ -601,79 +1467,35 @@ export function loadMovements() {
     return INITIAL_MOVEMENTS;
   }
 
-  syncResourceFromBackendInBackground("inventory.movements");
-  const raw = window.localStorage.getItem(MOVEMENTS_STORAGE_KEY);
+  void syncMovementsFromServerInBackground().catch(() => {
+    return;
+  });
 
-  if (!raw) {
-    return INITIAL_MOVEMENTS;
-  }
-
-  const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
-
-  if (!Array.isArray(parsed)) {
-    return INITIAL_MOVEMENTS;
-  }
-
-  return parsed
-    .map((item) => {
-      if (
-        typeof item.id !== "string" ||
-        typeof item.product !== "string" ||
-        !isMovementType(item.type) ||
-        typeof item.quantity !== "number" ||
-        typeof item.reason !== "string" ||
-        typeof item.user !== "string" ||
-        typeof item.createdAt !== "string"
-      ) {
-        return null;
-      }
-
-      const type = item.type;
-
-      const movement: MovementItem = {
-        id: item.id,
-        product: item.product,
-        type,
-        quantity: item.quantity,
-        reason: item.reason,
-        user: item.user,
-        createdAt: item.createdAt,
-        updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : undefined,
-        locationId: typeof item.locationId === "string" ? item.locationId : undefined,
-        fromLocationId: typeof item.fromLocationId === "string" ? item.fromLocationId : undefined,
-        toLocationId: typeof item.toLocationId === "string" ? item.toLocationId : undefined,
-        notes: typeof item.notes === "string" ? item.notes : undefined,
-        status: isMovementStatus(item.status) ? item.status : "concluida",
-        transferStatus:
-          type === "transferencia"
-            ? isTransferStatus(item.transferStatus)
-              ? item.transferStatus
-              : "recebida"
-            : undefined,
-        priority:
-          type === "transferencia"
-            ? isTransferPriority(item.priority)
-              ? item.priority
-              : "media"
-            : undefined,
-        code:
-          type === "transferencia"
-            ? typeof item.code === "string"
-              ? item.code
-              : buildTransferCode(new Date(item.createdAt))
-            : undefined,
-        receivedAt: typeof item.receivedAt === "string" ? item.receivedAt : undefined,
-      };
-
-      return movement;
-    })
-    .filter((item): item is MovementItem => item !== null);
+  return readStoredMovements();
 }
 
-export function saveMovements(movements: MovementItem[]) {
-  window.localStorage.setItem(MOVEMENTS_STORAGE_KEY, JSON.stringify(movements));
-  dispatchErpDataEvent();
-  persistResourceToBackendInBackground("inventory.movements", movements);
+export function getPreferredLocationUsedCapacity(
+  locationId: string,
+  movements: MovementItem[],
+  stockBalances?: ReadonlyMap<string, number> | null,
+) {
+  if (stockBalances?.has(locationId)) {
+    return Math.max(0, stockBalances.get(locationId) ?? 0);
+  }
+
+  return Math.max(0, getLocationUsedCapacity(locationId, movements));
+}
+
+export function getPreferredLocationAvailableCapacity(
+  location: LocationItem,
+  movements: MovementItem[],
+  stockBalances?: ReadonlyMap<string, number> | null,
+) {
+  return Math.max(
+    0,
+    location.capacityTotal -
+      getPreferredLocationUsedCapacity(location.id, movements, stockBalances),
+  );
 }
 
 export function getLocationUsedCapacity(locationId: string, movements: MovementItem[]) {

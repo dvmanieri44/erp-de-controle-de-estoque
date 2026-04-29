@@ -7,8 +7,9 @@ import path from "node:path";
 import { normalizeLoginUsername } from "@/lib/user-accounts";
 import { MIN_PASSWORD_LENGTH, upsertAuthCredential } from "@/lib/server/auth-credentials";
 import { loadServerUserAccounts } from "@/lib/server/auth-session";
-import { getFirebaseAdminDb, isFirebaseConfigured } from "@/lib/server/firebase-admin";
+import { getFirebaseAdminDb } from "@/lib/server/firebase-admin";
 import type { RequestMetadata } from "@/lib/server/request-metadata";
+import { getServerPersistenceProvider } from "@/lib/server/server-persistence";
 
 const PASSWORD_RESET_COLLECTION = "passwordResetTokens";
 const DEFAULT_PASSWORD_RESET_FILE = path.join(process.cwd(), ".data", "password-reset-tokens.json");
@@ -99,8 +100,15 @@ function buildResetTokenUrl(token: string) {
   return pathSuffix;
 }
 
+function canExposeDebugResetUrl() {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.ENABLE_DEBUG_RESET_LINKS === "true"
+  );
+}
+
 export function getPasswordResetProvider() {
-  return isFirebaseConfigured() ? "firebase" : "file";
+  return getServerPersistenceProvider("tokens de redefinicao de senha");
 }
 
 export async function requestPasswordReset(identifier: string, request: RequestMetadata) {
@@ -136,7 +144,7 @@ export async function requestPasswordReset(identifier: string, request: RequestM
     request,
   };
 
-  if (isFirebaseConfigured()) {
+  if (getPasswordResetProvider() === "firebase") {
     const collection = getFirebaseAdminDb().collection(PASSWORD_RESET_COLLECTION);
     const existingTokens = await collection.where("accountId", "==", account.id).where("usedAt", "==", null).get();
 
@@ -160,12 +168,12 @@ export async function requestPasswordReset(identifier: string, request: RequestM
   return {
     requested: true,
     accountId: account.id,
-    debugResetUrl: process.env.NODE_ENV === "production" ? undefined : buildResetTokenUrl(token),
+    debugResetUrl: canExposeDebugResetUrl() ? buildResetTokenUrl(token) : undefined,
   };
 }
 
 async function readStoredPasswordResetToken(tokenHash: string) {
-  if (isFirebaseConfigured()) {
+  if (getPasswordResetProvider() === "firebase") {
     const snapshot = await getFirebaseAdminDb().collection(PASSWORD_RESET_COLLECTION).doc(tokenHash).get();
     return snapshot.exists ? (snapshot.data() as StoredPasswordResetToken) : null;
   }
@@ -177,7 +185,7 @@ async function readStoredPasswordResetToken(tokenHash: string) {
 async function markPasswordResetTokenAsUsed(tokenHash: string) {
   const usedAt = new Date().toISOString();
 
-  if (isFirebaseConfigured()) {
+  if (getPasswordResetProvider() === "firebase") {
     await getFirebaseAdminDb()
       .collection(PASSWORD_RESET_COLLECTION)
       .doc(tokenHash)

@@ -12,6 +12,7 @@ import {
   getDashboardSections,
   type DashboardSection,
 } from "@/lib/dashboard-sections";
+import { clearLocalErpResourceCaches } from "@/lib/erp-remote-sync";
 import {
   clearCachedUserAccounts,
   getUserRoleLabel,
@@ -294,6 +295,20 @@ function AccountManager({
     setError("");
   }
 
+  async function reloadAccountsFromServer() {
+    const response = await fetch("/api/auth/accounts", {
+      method: "GET",
+      cache: "no-store",
+    });
+    const payload = (await response.json().catch(() => null)) as ManagedAccountsResponse | null;
+
+    if (!response.ok || !Array.isArray(payload?.accounts)) {
+      throw new Error(payload?.error ?? "Nao foi possivel recarregar as contas.");
+    }
+
+    onAccountsChange(payload.accounts);
+  }
+
   function handleEdit(account: UserAccount) {
     if (!canManageTarget(account)) {
       setError("Sua conta nao pode editar esse perfil.");
@@ -384,6 +399,26 @@ function AccountManager({
       const payload = (await response.json().catch(() => null)) as ManagedAccountsResponse | null;
 
       if (!response.ok || !Array.isArray(payload?.accounts)) {
+        if (response.status === 409) {
+          const shouldReload = window.confirm(
+            "As contas foram alteradas por outra sessao. Deseja recarregar os dados mais recentes do servidor?",
+          );
+
+          if (shouldReload) {
+            try {
+              await reloadAccountsFromServer();
+              setError("As contas foram recarregadas. Revise os dados e tente novamente.");
+            } catch (reloadError) {
+              setError(
+                reloadError instanceof Error
+                  ? reloadError.message
+                  : "Nao foi possivel recarregar as contas.",
+              );
+            }
+            return;
+          }
+        }
+
         setError(payload?.error ?? "Nao foi possivel salvar a conta agora.");
         return;
       }
@@ -423,6 +458,26 @@ function AccountManager({
       const payload = (await response.json().catch(() => null)) as ManagedAccountsResponse | null;
 
       if (!response.ok || !Array.isArray(payload?.accounts)) {
+        if (response.status === 409) {
+          const shouldReload = window.confirm(
+            "As contas foram alteradas por outra sessao. Deseja recarregar os dados mais recentes do servidor?",
+          );
+
+          if (shouldReload) {
+            try {
+              await reloadAccountsFromServer();
+              setError("As contas foram recarregadas. Confira a lista antes de tentar excluir novamente.");
+            } catch (reloadError) {
+              setError(
+                reloadError instanceof Error
+                  ? reloadError.message
+                  : "Nao foi possivel recarregar as contas.",
+              );
+            }
+            return;
+          }
+        }
+
         setError(payload?.error ?? "Nao foi possivel excluir a conta agora.");
         return;
       }
@@ -609,6 +664,7 @@ export function SidebarMenu({
     }
 
     clearCachedUserAccounts();
+    clearLocalErpResourceCaches();
     void fetch("/api/auth/logout", {
       method: "POST",
     }).finally(() => {
@@ -628,6 +684,7 @@ export function SidebarMenu({
 
       if (resolvedActiveAccountId === null) {
         clearCachedUserAccounts();
+        clearLocalErpResourceCaches();
         void fetch("/api/auth/logout", {
           method: "POST",
         }).finally(() => {

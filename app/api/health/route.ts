@@ -1,25 +1,49 @@
 import { NextResponse } from "next/server";
 
-import { getAuditLogProvider } from "@/lib/server/audit-log";
-import { getAuthCredentialsProvider } from "@/lib/server/auth-credentials";
 import { isFirebaseConfigured } from "@/lib/server/firebase-admin";
-import { getErpPersistenceProvider } from "@/lib/server/erp-state";
-import { getPasswordResetProvider } from "@/lib/server/password-reset";
-import { getRateLimitProvider } from "@/lib/server/rate-limit";
+import { describeServerPersistence } from "@/lib/server/server-persistence";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  const erpPersistence = describeServerPersistence("erp");
+  const authCredentials = describeServerPersistence("credenciais de autenticacao");
+  const rateLimit = describeServerPersistence("rate limit");
+  const auditLog = describeServerPersistence("auditoria");
+  const passwordReset = describeServerPersistence("tokens de redefinicao de senha");
+
   return NextResponse.json({
-    status: "ok",
+    status:
+      erpPersistence.misconfigured ||
+      authCredentials.misconfigured ||
+      rateLimit.misconfigured ||
+      auditLog.misconfigured ||
+      passwordReset.misconfigured
+        ? "degraded"
+        : "ok",
     timestamp: new Date().toISOString(),
     services: {
       firebaseConfigured: isFirebaseConfigured(),
-      erpPersistence: getErpPersistenceProvider(),
-      authCredentials: getAuthCredentialsProvider(),
-      rateLimit: getRateLimitProvider(),
-      auditLog: getAuditLogProvider(),
-      passwordReset: getPasswordResetProvider(),
+      erpPersistence: erpPersistence.provider,
+      authCredentials: authCredentials.provider,
+      rateLimit: rateLimit.provider,
+      auditLog: auditLog.provider,
+      passwordReset: passwordReset.provider,
+      localFallbackAllowed:
+        erpPersistence.localFallbackAllowed &&
+        authCredentials.localFallbackAllowed &&
+        rateLimit.localFallbackAllowed &&
+        auditLog.localFallbackAllowed &&
+        passwordReset.localFallbackAllowed,
+      misconfiguration: [
+        erpPersistence,
+        authCredentials,
+        rateLimit,
+        auditLog,
+        passwordReset,
+      ]
+        .filter((service) => service.misconfigured)
+        .map((service) => service.error),
     },
   });
 }

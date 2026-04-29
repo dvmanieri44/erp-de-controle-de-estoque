@@ -2,9 +2,11 @@ import "server-only";
 
 import {
   createUserAccountId,
+  INITIAL_USER_ACCOUNTS,
   normalizeLoginUsername,
   normalizeUserAccount,
   normalizeUserAccounts,
+  parseUserAccountRecord,
   type UserAccount,
   type UserRole,
   type UserStatus,
@@ -17,7 +19,7 @@ import {
   renameAuthCredentialUsername,
   upsertAuthCredential,
 } from "@/lib/server/auth-credentials";
-import { writeErpResource } from "@/lib/server/erp-state";
+import { ErpResourceConflictError, readErpResource, writeErpResource } from "@/lib/server/erp-state";
 
 export type AccountMutationInput = {
   name: string;
@@ -161,6 +163,51 @@ function ensureRoleEscalationAllowed(session: ServerSession, targetRole: UserRol
   }
 }
 
+async function loadUserAccountState() {
+  try {
+    const payload = await readErpResource("user.accounts");
+    const accounts = payload.data
+      .map((item) =>
+        item && typeof item === "object"
+          ? parseUserAccountRecord(item as Record<string, unknown>)
+          : null,
+      )
+      .filter((item): item is UserAccount => item !== null);
+
+    return {
+      accounts:
+        accounts.length > 0
+          ? normalizeUserAccounts(accounts)
+          : normalizeUserAccounts([...INITIAL_USER_ACCOUNTS]),
+      version: payload.version,
+    };
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      throw error;
+    }
+
+    return {
+      accounts: await loadServerUserAccounts(),
+      version: 0,
+    };
+  }
+}
+
+async function persistUserAccounts(accounts: UserAccount[], baseVersion: number) {
+  try {
+    await writeErpResource("user.accounts", accounts, { baseVersion });
+  } catch (error) {
+    if (error instanceof ErpResourceConflictError) {
+      throw new AccountManagementError(
+        "As contas foram alteradas por outra sessao. Recarregue a lista e tente novamente.",
+        409,
+      );
+    }
+
+    throw error;
+  }
+}
+
 export function parseAccountMutationInput(value: unknown) {
   if (!value || typeof value !== "object") {
     return null;
@@ -206,7 +253,8 @@ export async function createManagedAccount(input: {
   validateManagerSession(input.session);
   await validateCurrentPassword(input.currentPassword);
 
-  const accounts = await loadServerUserAccounts();
+  const accountState = await loadUserAccountState();
+  const accounts = accountState.accounts;
   const nextAccountInput = normalizeAccountInput(input.account);
   ensureRoleEscalationAllowed(input.session, nextAccountInput.role);
   ensureUniqueAccountFields(accounts, nextAccountInput);
@@ -224,7 +272,7 @@ export async function createManagedAccount(input: {
   });
   const nextAccounts = normalizeUserAccounts([nextAccount, ...accounts]);
 
-  await writeErpResource("user.accounts", nextAccounts);
+  await persistUserAccounts(nextAccounts, accountState.version);
   await upsertAuthCredential({
     accountId: nextAccount.id,
     username: nextAccount.username,
@@ -247,7 +295,8 @@ export async function updateManagedAccount(input: {
   validateManagerSession(input.session);
   await validateCurrentPassword(input.currentPassword);
 
-  const accounts = await loadServerUserAccounts();
+  const accountState = await loadUserAccountState();
+  const accounts = accountState.accounts;
   const existingAccount = accounts.find((account) => account.id === input.accountId) ?? null;
 
   if (!existingAccount) {
@@ -303,7 +352,7 @@ export async function updateManagedAccount(input: {
     accounts.map((account) => (account.id === existingAccount.id ? nextAccount : account)),
   );
 
-  await writeErpResource("user.accounts", nextAccounts);
+  await persistUserAccounts(nextAccounts, accountState.version);
 
   if (trimmedPassword.length > 0) {
     await upsertAuthCredential({
@@ -332,7 +381,8 @@ export async function deleteManagedAccount(input: {
   validateManagerSession(input.session);
   await validateCurrentPassword(input.currentPassword);
 
-  const accounts = await loadServerUserAccounts();
+  const accountState = await loadUserAccountState();
+  const accounts = accountState.accounts;
   const existingAccount = accounts.find((account) => account.id === input.accountId) ?? null;
 
   if (!existingAccount) {
@@ -357,7 +407,7 @@ export async function deleteManagedAccount(input: {
 
   const nextAccounts = normalizeUserAccounts(accounts.filter((account) => account.id !== existingAccount.id));
 
-  await writeErpResource("user.accounts", nextAccounts);
+  await persistUserAccounts(nextAccounts, accountState.version);
   await deleteAuthCredential(existingAccount.id);
 
   return {

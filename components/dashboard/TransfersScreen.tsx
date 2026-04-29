@@ -3,30 +3,40 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { ERP_DATA_EVENT } from "@/lib/app-events";
 import {
   DATE_RANGE_OPTIONS,
   INITIAL_LOCATIONS,
   TRANSFER_PRIORITY_OPTIONS,
   TRANSFER_STATUS_OPTIONS,
+  buildLocationStockBalanceMap,
   buildTransferCode,
+  createMovement,
+  deleteMovement,
+  findMatchingProductReference,
+  fetchLocationStockBalances,
   formatDateTime,
   formatUnits,
-  getLocationAvailableCapacity,
-  getLocationUsedCapacity,
   getMovementStatusLabel,
   getTransferPriorityLabel,
   isMovementCancelled,
   loadLocations,
   loadMovements,
   matchesDateRange,
+  MovementVersionConflictError,
+  normalizeReferenceText,
   normalizeText,
-  saveMovements,
+  refreshMovements,
   type DateRangeFilter,
   type LocationItem,
+  type LocationStockBalanceMap,
   type MovementItem,
   type TransferPriority,
   type TransferStatus,
+  type VersionedMovementItem,
+  updateMovement,
 } from "@/lib/inventory";
+import { loadProductLines } from "@/lib/operations-store";
 
 type ToastState = {
   id: number;
@@ -63,6 +73,108 @@ const EMPTY_FORM: TransferFormState = {
   priority: "media",
   transferStatus: "solicitada",
 };
+
+function applyLocationStockDelta(
+  balances: Map<string, number>,
+  locationId: string | undefined,
+  delta: number,
+) {
+  if (!locationId || delta === 0) {
+    return;
+  }
+
+  balances.set(locationId, (balances.get(locationId) ?? 0) + delta);
+}
+
+function getTransferStockStatus(movement: Pick<MovementItem, "transferStatus">) {
+  return movement.transferStatus ?? "recebida";
+}
+
+function isMovementCancelledForStock(movement: MovementItem) {
+  if (movement.type === "transferencia") {
+    return getTransferStockStatus(movement) === "cancelada";
+  }
+
+  return (movement.status ?? "concluida") === "cancelada";
+}
+
+function buildLocalLocationStockBalanceMap(
+  movements: readonly MovementItem[],
+): LocationStockBalanceMap {
+  const balances = new Map<string, number>();
+
+  for (const movement of movements) {
+    if (isMovementCancelledForStock(movement)) {
+      continue;
+    }
+
+    if (movement.type === "entrada") {
+      applyLocationStockDelta(balances, movement.locationId, movement.quantity);
+      continue;
+    }
+
+    if (movement.type === "saida") {
+      applyLocationStockDelta(balances, movement.locationId, -movement.quantity);
+      continue;
+    }
+
+    const transferStatus = getTransferStockStatus(movement);
+
+    if (transferStatus === "em_transito" || transferStatus === "recebida") {
+      applyLocationStockDelta(balances, movement.fromLocationId, -movement.quantity);
+    }
+
+    if (transferStatus === "recebida") {
+      applyLocationStockDelta(balances, movement.toLocationId, movement.quantity);
+    }
+  }
+
+  return balances;
+}
+
+function revertMovementFromLocationStockBalances(
+  balances: ReadonlyMap<string, number>,
+  movement: MovementItem | null,
+): LocationStockBalanceMap {
+  const adjusted = new Map(balances);
+
+  if (!movement || isMovementCancelledForStock(movement)) {
+    return adjusted;
+  }
+
+  if (movement.type === "entrada") {
+    applyLocationStockDelta(adjusted, movement.locationId, -movement.quantity);
+    return adjusted;
+  }
+
+  if (movement.type === "saida") {
+    applyLocationStockDelta(adjusted, movement.locationId, movement.quantity);
+    return adjusted;
+  }
+
+  const transferStatus = getTransferStockStatus(movement);
+
+  if (transferStatus === "em_transito" || transferStatus === "recebida") {
+    applyLocationStockDelta(adjusted, movement.fromLocationId, movement.quantity);
+  }
+
+  if (transferStatus === "recebida") {
+    applyLocationStockDelta(adjusted, movement.toLocationId, -movement.quantity);
+  }
+
+  return adjusted;
+}
+
+function getLocationStockBalance(
+  balances: ReadonlyMap<string, number>,
+  locationId: string | undefined,
+) {
+  if (!locationId) {
+    return 0;
+  }
+
+  return Math.max(0, balances.get(locationId) ?? 0);
+}
 
 function MetricCard({
   title,
@@ -199,8 +311,9 @@ function buildTimeline(transfer: MovementItem) {
 
 export function TransfersScreen() {
   const [locations, setLocations] = useState<LocationItem[]>(INITIAL_LOCATIONS);
-  const [movements, setMovements] = useState<MovementItem[]>([]);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const [movements, setMovements] = useState<VersionedMovementItem[]>([]);
+  const [locationStockBalances, setLocationStockBalances] = useState<LocationStockBalanceMap>(() => new Map());
+  const [isUsingStockFallback, setIsUsingStockFallback] = useState(false);
   const [search, setSearch] = useState("");
   const [originFilter, setOriginFilter] = useState("todos");
   const [destinationFilter, setDestinationFilter] = useState("todos");
@@ -212,17 +325,54 @@ export function TransfersScreen() {
   const [visibleCount, setVisibleCount] = useState(10);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<MovementItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<VersionedMovementItem | null>(null);
   const [form, setForm] = useState<TransferFormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [toast, setToast] = useState<ToastState>(null);
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  const fallbackWarningShownRef = useRef(false);
 
   useEffect(() => {
+    let isActive = true;
+
+    async function syncLocationStock(nextMovements: VersionedMovementItem[]) {
+      try {
+        const balances = buildLocationStockBalanceMap(
+          await fetchLocationStockBalances(),
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        setLocationStockBalances(balances);
+        setIsUsingStockFallback(false);
+        fallbackWarningShownRef.current = false;
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+        setIsUsingStockFallback(true);
+
+        if (!fallbackWarningShownRef.current) {
+          fallbackWarningShownRef.current = true;
+          setToast({
+            id: Date.now(),
+            message: "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
+            tone: "error",
+          });
+        }
+      }
+    }
+
     try {
-      setLocations(loadLocations());
-      setMovements(loadMovements());
-      setHasLoaded(true);
+      const nextLocations = loadLocations();
+      const nextMovements = loadMovements();
+      setLocations(nextLocations);
+      setMovements(nextMovements);
+      void syncLocationStock(nextMovements);
     } catch {
       setToast({
         id: Date.now(),
@@ -233,10 +383,20 @@ export function TransfersScreen() {
 
     function syncInventory() {
       try {
-        setLocations(loadLocations());
-        setMovements(loadMovements());
-        setHasLoaded(true);
+        if (!isActive) {
+          return;
+        }
+
+        const nextLocations = loadLocations();
+        const nextMovements = loadMovements();
+        setLocations(nextLocations);
+        setMovements(nextMovements);
+        void syncLocationStock(nextMovements);
       } catch {
+        if (!isActive) {
+          return;
+        }
+
         setToast({
           id: Date.now(),
           message: "Não foi possível sincronizar os dados.",
@@ -245,17 +405,39 @@ export function TransfersScreen() {
       }
     }
 
-    window.addEventListener("storage", syncInventory);
-    return () => window.removeEventListener("storage", syncInventory);
-  }, []);
+    async function syncInventoryFromServer() {
+      try {
+        const nextMovements = await refreshMovements();
 
-  useEffect(() => {
-    if (!hasLoaded) {
-      return;
+        if (!isActive) {
+          return;
+        }
+
+        setLocations(loadLocations());
+        setMovements(nextMovements);
+        await syncLocationStock(nextMovements);
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        setToast({
+          id: Date.now(),
+          message: "Não foi possível carregar as transferências salvas.",
+          tone: "error",
+        });
+      }
     }
 
-    saveMovements(movements);
-  }, [hasLoaded, movements]);
+    void syncInventoryFromServer();
+    window.addEventListener("storage", syncInventory);
+    window.addEventListener(ERP_DATA_EVENT, syncInventory);
+    return () => {
+      isActive = false;
+      window.removeEventListener("storage", syncInventory);
+      window.removeEventListener(ERP_DATA_EVENT, syncInventory);
+    };
+  }, []);
 
   useEffect(() => {
     if (!toast) {
@@ -373,6 +555,36 @@ export function TransfersScreen() {
     };
   }, [transfers]);
 
+  const currentTransfer = useMemo(
+    () => (editingId ? movements.find((movement) => movement.id === editingId) ?? null : null),
+    [editingId, movements],
+  );
+
+  const formStockBalances = useMemo(
+    () => revertMovementFromLocationStockBalances(locationStockBalances, currentTransfer),
+    [currentTransfer, locationStockBalances],
+  );
+
+  const getLocationUsedCapacity = (
+    locationId: string,
+    candidateMovements?: readonly MovementItem[],
+  ) => {
+    if (isUsingStockFallback) {
+      const fallbackBalances = candidateMovements
+        ? buildLocalLocationStockBalanceMap(candidateMovements)
+        : locationStockBalances;
+      return getLocationStockBalance(fallbackBalances, locationId);
+    }
+
+    const balances = candidateMovements ? formStockBalances : locationStockBalances;
+    return getLocationStockBalance(balances, locationId);
+  };
+
+  const getLocationAvailableCapacity = (
+    location: LocationItem,
+    candidateMovements?: readonly MovementItem[],
+  ) => Math.max(0, location.capacityTotal - getLocationUsedCapacity(location.id, candidateMovements));
+
   function closeModal() {
     setIsModalOpen(false);
     setEditingId(null);
@@ -397,10 +609,12 @@ export function TransfersScreen() {
     setErrors({});
   }
 
-  function validateForm(values: TransferFormState) {
+  function validateForm(
+    values: TransferFormState,
+    stockBalances: ReadonlyMap<string, number>,
+  ) {
     const nextErrors: FormErrors = {};
     const quantity = Number(values.quantity);
-    const baseline = movements.filter((movement) => movement.id !== editingId);
 
     if (!values.product.trim()) {
       nextErrors.product = "Informe o produto transferido.";
@@ -437,27 +651,126 @@ export function TransfersScreen() {
     }
 
     const fromLocation = locations.find((location) => location.id === values.fromLocationId);
-    const toLocation = locations.find((location) => location.id === values.toLocationId);
 
-    if (!fromLocation || !toLocation) {
+    if (!fromLocation) {
       nextErrors.fromLocationId = "Selecione localizações válidas.";
       return nextErrors;
     }
 
-    const used = Math.max(0, getLocationUsedCapacity(fromLocation.id, baseline));
-    const available = Math.max(0, getLocationAvailableCapacity(toLocation, baseline));
+    if (
+      values.transferStatus === "solicitada" ||
+      values.transferStatus === "em_separacao"
+    ) {
+      return nextErrors;
+    }
 
-    if (quantity > used) {
-      nextErrors.quantity = `A origem possui apenas ${formatUnits(used)} ocupadas para transferência.`;
-    } else if (quantity > available) {
-      nextErrors.quantity = `O destino possui apenas ${formatUnits(available)} disponíveis.`;
+    const availableStock = getLocationStockBalance(stockBalances, fromLocation.id);
+
+    if (quantity > availableStock) {
+      nextErrors.quantity = `A origem possui apenas ${formatUnits(availableStock)} em saldo para transferência.`;
     }
 
     return nextErrors;
   }
 
-  function handleSubmit() {
-    const nextErrors = validateForm(form);
+  function getErrorMessage(error: unknown, fallback: string) {
+    return error instanceof Error ? error.message : fallback;
+  }
+
+  async function reloadMovementsAfterConflict(message: string) {
+    let nextMovements = loadMovements();
+
+    try {
+      nextMovements = await refreshMovements();
+    } catch {
+      nextMovements = loadMovements();
+    }
+
+    setMovements(nextMovements);
+
+    try {
+      const balances = buildLocationStockBalanceMap(
+        await fetchLocationStockBalances(),
+      );
+      setLocationStockBalances(balances);
+      setIsUsingStockFallback(false);
+      fallbackWarningShownRef.current = false;
+    } catch {
+      setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+      setIsUsingStockFallback(true);
+    }
+
+    setToast({
+      id: Date.now(),
+      message,
+      tone: "error",
+    });
+  }
+
+  async function resolveValidationStockBalances() {
+    try {
+      const balances = buildLocationStockBalanceMap(
+        await fetchLocationStockBalances(),
+      );
+      setLocationStockBalances(balances);
+      setIsUsingStockFallback(false);
+      fallbackWarningShownRef.current = false;
+      return revertMovementFromLocationStockBalances(balances, currentTransfer);
+    } catch {
+      const fallbackBalances = buildLocalLocationStockBalanceMap(
+        movements.filter((movement) => movement.id !== editingId),
+      );
+      setLocationStockBalances(buildLocalLocationStockBalanceMap(movements));
+      setIsUsingStockFallback(true);
+
+      if (!fallbackWarningShownRef.current) {
+        fallbackWarningShownRef.current = true;
+        setToast({
+          id: Date.now(),
+          message:
+            "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
+          tone: "error",
+        });
+      }
+
+      return fallbackBalances;
+    }
+  }
+
+  async function restoreTransfer(removed: VersionedMovementItem) {
+    try {
+      await createMovement(removed);
+      const nextMovements = loadMovements();
+      setMovements(nextMovements);
+
+      try {
+        const balances = buildLocationStockBalanceMap(
+          await fetchLocationStockBalances(),
+        );
+        setLocationStockBalances(balances);
+        setIsUsingStockFallback(false);
+        fallbackWarningShownRef.current = false;
+      } catch {
+        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+        setIsUsingStockFallback(true);
+      }
+      setToast({
+        id: Date.now(),
+        message: "Transferência restaurada.",
+        tone: "success",
+      });
+    } catch (error) {
+      setToast({
+        id: Date.now(),
+        message: getErrorMessage(error, "Não foi possível restaurar a transferência."),
+        tone: "error",
+      });
+    }
+  }
+
+  async function handleSubmit() {
+    const stockBalances = await resolveValidationStockBalances();
+    const nextErrors = validateForm(form, stockBalances);
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
@@ -465,36 +778,84 @@ export function TransfersScreen() {
     }
 
     const now = new Date().toISOString();
-    const transfer: MovementItem = {
+    const matchedProduct = findMatchingProductReference(loadProductLines(), form.product);
+    const shouldPreserveCurrentProductId =
+      !matchedProduct &&
+      !!currentTransfer?.productId &&
+      normalizeReferenceText(form.product) === normalizeReferenceText(currentTransfer.product);
+    const transfer: VersionedMovementItem = {
       id: editingId ?? `mov-${Date.now()}`,
-      product: form.product.trim(),
+      product: matchedProduct?.product ?? form.product.trim(),
+      productId: matchedProduct?.sku ?? (shouldPreserveCurrentProductId ? currentTransfer?.productId : undefined),
       type: "transferencia",
       quantity: Number(form.quantity),
       reason: form.reason.trim(),
       user: form.user.trim(),
-      createdAt: editingId ? movements.find((item) => item.id === editingId)?.createdAt ?? now : now,
+      createdAt: currentTransfer?.createdAt ?? now,
       updatedAt: editingId ? now : undefined,
       fromLocationId: form.fromLocationId,
       toLocationId: form.toLocationId,
       notes: form.notes.trim() || undefined,
       priority: form.priority,
       transferStatus: form.transferStatus,
-      code: movements.find((item) => item.id === editingId)?.code ?? buildTransferCode(new Date()),
+      code: currentTransfer?.code ?? buildTransferCode(new Date()),
       receivedAt:
         form.transferStatus === "recebida"
-          ? movements.find((item) => item.id === editingId)?.receivedAt ?? now
+          ? currentTransfer?.receivedAt ?? now
           : undefined,
+      version: currentTransfer?.version,
     };
 
-    setMovements((current) =>
-      editingId ? current.map((item) => (item.id === editingId ? transfer : item)) : [transfer, ...current],
-    );
-    setToast({
-      id: Date.now(),
-      message: editingId ? "Transferência atualizada com sucesso." : "Transferência registrada com sucesso.",
-      tone: "success",
-    });
-    closeModal();
+    try {
+      if (editingId) {
+        if (typeof currentTransfer?.version !== "number") {
+          await reloadMovementsAfterConflict(
+            "A versão desta transferência não está sincronizada. Os dados foram recarregados.",
+          );
+          return;
+        }
+
+        await updateMovement(editingId, transfer, currentTransfer.version);
+      } else {
+        await createMovement(transfer);
+      }
+
+        const nextMovements = loadMovements();
+        setMovements(nextMovements);
+
+        try {
+          const balances = buildLocationStockBalanceMap(
+            await fetchLocationStockBalances(),
+          );
+          setLocationStockBalances(balances);
+          setIsUsingStockFallback(false);
+          fallbackWarningShownRef.current = false;
+        } catch {
+          setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+          setIsUsingStockFallback(true);
+        }
+
+        setToast({
+        id: Date.now(),
+        message: editingId ? "Transferência atualizada com sucesso." : "Transferência registrada com sucesso.",
+        tone: "success",
+      });
+      closeModal();
+    } catch (error) {
+      if (error instanceof MovementVersionConflictError) {
+        await reloadMovementsAfterConflict(
+          "A transferência foi alterada por outra sessão. Os dados foram recarregados.",
+        );
+        closeModal();
+        return;
+      }
+
+      setToast({
+        id: Date.now(),
+        message: getErrorMessage(error, "Não foi possível salvar a transferência."),
+        tone: "error",
+      });
+    }
   }
 
   function handleDuplicate(transfer: MovementItem) {
@@ -514,7 +875,7 @@ export function TransfersScreen() {
     setErrors({});
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteTarget) {
       return;
     }
@@ -530,26 +891,59 @@ export function TransfersScreen() {
     }
 
     const removed = deleteTarget;
-
-    setMovements((current) => current.filter((movement) => movement.id !== removed.id));
-    setToast({
-      id: Date.now(),
-      message: "Transferência excluída com sucesso.",
-      tone: "success",
-      actionLabel: "Desfazer",
-      onAction: () => {
-        setMovements((current) => [removed, ...current]);
-        setToast({
-          id: Date.now(),
-          message: "Transferência restaurada.",
-          tone: "success",
-        });
-      },
-    });
     setDeleteTarget(null);
+
+    try {
+      if (typeof removed.version !== "number") {
+        await reloadMovementsAfterConflict(
+          "A versão desta transferência não está sincronizada. Os dados foram recarregados.",
+        );
+        return;
+      }
+
+      await deleteMovement(removed.id, removed.version);
+      const nextMovements = loadMovements();
+      setMovements(nextMovements);
+
+      try {
+        const balances = buildLocationStockBalanceMap(
+          await fetchLocationStockBalances(),
+        );
+        setLocationStockBalances(balances);
+        setIsUsingStockFallback(false);
+        fallbackWarningShownRef.current = false;
+      } catch {
+        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+        setIsUsingStockFallback(true);
+      }
+
+      setToast({
+        id: Date.now(),
+        message: "Transferência excluída com sucesso.",
+        tone: "success",
+        actionLabel: "Desfazer",
+        onAction: () => {
+          void restoreTransfer(removed);
+        },
+      });
+    } catch (error) {
+      if (error instanceof MovementVersionConflictError) {
+        await reloadMovementsAfterConflict(
+          "A transferência foi alterada por outra sessão. Os dados foram recarregados.",
+        );
+        return;
+      }
+
+      setToast({
+        id: Date.now(),
+        message: getErrorMessage(error, "Não foi possível excluir a transferência."),
+        tone: "error",
+      });
+      setDeleteTarget(removed);
+    }
   }
 
-  function handleAdvanceStatus(transfer: MovementItem) {
+  async function handleAdvanceStatus(transfer: VersionedMovementItem) {
     const currentStatus = transfer.transferStatus ?? "solicitada";
     const nextStatus =
       currentStatus === "solicitada"
@@ -564,33 +958,105 @@ export function TransfersScreen() {
       return;
     }
 
+    if (typeof transfer.version !== "number") {
+      await reloadMovementsAfterConflict(
+        "A versão desta transferência não está sincronizada. Os dados foram recarregados.",
+      );
+      return;
+    }
+
     const now = new Date().toISOString();
-    setMovements((current) =>
-      current.map((item) =>
-        item.id === transfer.id
-          ? {
-              ...item,
-              transferStatus: nextStatus,
-              updatedAt: now,
-              receivedAt: nextStatus === "recebida" ? item.receivedAt ?? now : item.receivedAt,
-            }
-          : item,
-      ),
-    );
+
+    try {
+      await updateMovement(
+        transfer.id,
+        {
+          transferStatus: nextStatus,
+          updatedAt: now,
+          receivedAt: nextStatus === "recebida" ? transfer.receivedAt ?? now : transfer.receivedAt,
+        },
+        transfer.version,
+      );
+      const nextMovements = loadMovements();
+      setMovements(nextMovements);
+
+      try {
+        const balances = buildLocationStockBalanceMap(
+          await fetchLocationStockBalances(),
+        );
+        setLocationStockBalances(balances);
+        setIsUsingStockFallback(false);
+        fallbackWarningShownRef.current = false;
+      } catch {
+        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+        setIsUsingStockFallback(true);
+      }
+
+      setToast({
+        id: Date.now(),
+        message: "Status da transferência atualizado com sucesso.",
+        tone: "success",
+      });
+    } catch (error) {
+      if (error instanceof MovementVersionConflictError) {
+        await reloadMovementsAfterConflict(
+          "A transferência foi alterada por outra sessão. Os dados foram recarregados.",
+        );
+        return;
+      }
+
+      setToast({
+        id: Date.now(),
+        message: getErrorMessage(error, "Não foi possível atualizar o status da transferência."),
+        tone: "error",
+      });
+    }
   }
 
-  function handleCancelTransfer(transfer: MovementItem) {
-    setMovements((current) =>
-      current.map((item) =>
-        item.id === transfer.id
-          ? {
-              ...item,
-              transferStatus: "cancelada",
-              updatedAt: new Date().toISOString(),
-            }
-          : item,
-      ),
-    );
+  async function handleCancelTransfer(transfer: VersionedMovementItem) {
+    if (typeof transfer.version !== "number") {
+      await reloadMovementsAfterConflict(
+        "A versão desta transferência não está sincronizada. Os dados foram recarregados.",
+      );
+      return;
+    }
+
+    try {
+      await deleteMovement(transfer.id, transfer.version, { mode: "cancel" });
+      const nextMovements = loadMovements();
+      setMovements(nextMovements);
+
+      try {
+        const balances = buildLocationStockBalanceMap(
+          await fetchLocationStockBalances(),
+        );
+        setLocationStockBalances(balances);
+        setIsUsingStockFallback(false);
+        fallbackWarningShownRef.current = false;
+      } catch {
+        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+        setIsUsingStockFallback(true);
+      }
+
+      setToast({
+        id: Date.now(),
+        message: "Transferência cancelada com sucesso.",
+        tone: "success",
+      });
+    } catch (error) {
+      if (error instanceof MovementVersionConflictError) {
+        await reloadMovementsAfterConflict(
+          "A transferência foi alterada por outra sessão. Os dados foram recarregados.",
+        );
+        return;
+      }
+
+      setToast({
+        id: Date.now(),
+        message: getErrorMessage(error, "Não foi possível cancelar a transferência."),
+        tone: "error",
+      });
+    }
   }
 
   function handleExport() {
@@ -1120,3 +1586,5 @@ export function TransfersScreen() {
     </section>
   );
 }
+
+

@@ -7,7 +7,8 @@ import { promisify } from "node:util";
 
 import type { UserAccount } from "@/lib/user-accounts";
 import { normalizeLoginUsername } from "@/lib/user-accounts";
-import { getFirebaseAdminDb, isFirebaseConfigured } from "@/lib/server/firebase-admin";
+import { getFirebaseAdminDb } from "@/lib/server/firebase-admin";
+import { getServerPersistenceProvider } from "@/lib/server/server-persistence";
 
 const scrypt = promisify(scryptCallback);
 const AUTH_CREDENTIALS_COLLECTION = "authCredentials";
@@ -42,7 +43,7 @@ function getAuthCredentialsFilePath() {
 }
 
 export function getAuthCredentialsProvider() {
-  return isFirebaseConfigured() ? "firebase" : "file";
+  return getServerPersistenceProvider("credenciais de autenticacao");
 }
 
 function normalizeCredentialRecord(accountId: string, value: unknown) {
@@ -125,7 +126,7 @@ async function readFirebaseCredentialState() {
 }
 
 async function readCredentialState() {
-  if (isFirebaseConfigured()) {
+  if (getAuthCredentialsProvider() === "firebase") {
     return readFirebaseCredentialState();
   }
 
@@ -165,7 +166,7 @@ async function updateFileCredentialState(
 }
 
 async function persistCredential(credential: StoredAuthCredential) {
-  if (isFirebaseConfigured()) {
+  if (getAuthCredentialsProvider() === "firebase") {
     await getFirebaseAdminDb()
       .collection(AUTH_CREDENTIALS_COLLECTION)
       .doc(credential.accountId)
@@ -231,7 +232,7 @@ export async function renameAuthCredentialUsername(input: {
 }
 
 export async function deleteAuthCredential(accountId: string) {
-  if (isFirebaseConfigured()) {
+  if (getAuthCredentialsProvider() === "firebase") {
     await getFirebaseAdminDb().collection(AUTH_CREDENTIALS_COLLECTION).doc(accountId).delete();
     return;
   }
@@ -248,7 +249,10 @@ export async function deleteAuthCredential(accountId: string) {
 }
 
 function getBootstrapCredentials(accounts: UserAccount[]) {
-  if (process.env.NODE_ENV !== "production") {
+  if (
+    process.env.NODE_ENV !== "production" &&
+    process.env.ALLOW_DEV_BOOTSTRAP_PASSWORDS === "true"
+  ) {
     return accounts
       .map((account) => {
         const password = DEV_BOOTSTRAP_PASSWORDS[account.username];

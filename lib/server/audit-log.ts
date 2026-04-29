@@ -4,8 +4,9 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-import { getFirebaseAdminDb, isFirebaseConfigured } from "@/lib/server/firebase-admin";
+import { getFirebaseAdminDb } from "@/lib/server/firebase-admin";
 import type { RequestMetadata } from "@/lib/server/request-metadata";
+import { getServerPersistenceProvider } from "@/lib/server/server-persistence";
 
 const AUDIT_LOG_COLLECTION = "auditLogs";
 const DEFAULT_AUDIT_LOG_FILE = path.join(process.cwd(), ".data", "audit-log.ndjson");
@@ -69,7 +70,7 @@ function sanitizeMetadata(metadata?: Record<string, string | number | boolean | 
 }
 
 export function getAuditLogProvider() {
-  return isFirebaseConfigured() ? "firebase" : "file";
+  return getServerPersistenceProvider("auditoria");
 }
 
 export async function writeAuditLog(input: WriteAuditLogInput) {
@@ -85,7 +86,7 @@ export async function writeAuditLog(input: WriteAuditLogInput) {
     metadata: sanitizeMetadata(input.metadata),
   };
 
-  if (isFirebaseConfigured()) {
+  if (getAuditLogProvider() === "firebase") {
     await getFirebaseAdminDb().collection(AUDIT_LOG_COLLECTION).doc(entry.id).set(entry);
     return entry;
   }
@@ -105,7 +106,7 @@ export async function listAuditLogs(options?: {
 }) {
   const limit = Math.min(Math.max(options?.limit ?? 50, 1), 200);
 
-  if (isFirebaseConfigured()) {
+  if (getAuditLogProvider() === "firebase") {
     let query = getFirebaseAdminDb().collection(AUDIT_LOG_COLLECTION).orderBy("timestamp", "desc").limit(limit);
 
     if (options?.category) {

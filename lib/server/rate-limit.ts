@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getFirebaseAdminDb, isFirebaseConfigured } from "@/lib/server/firebase-admin";
+import { getFirebaseAdminDb } from "@/lib/server/firebase-admin";
+import { getServerPersistenceProvider } from "@/lib/server/server-persistence";
 
 const RATE_LIMIT_COLLECTION = "rateLimits";
 const DEFAULT_RATE_LIMIT_FILE = path.join(process.cwd(), ".data", "rate-limits.json");
@@ -144,7 +145,7 @@ function toRateLimitStatus(policy: RateLimitPolicy, state: ReturnType<typeof res
 async function readRateLimitEntry(policy: RateLimitPolicy) {
   const id = createRateLimitId(policy.scope, policy.key);
 
-  if (isFirebaseConfigured()) {
+  if (getRateLimitProvider() === "firebase") {
     const snapshot = await getFirebaseAdminDb().collection(RATE_LIMIT_COLLECTION).doc(id).get();
     return snapshot.exists ? (snapshot.data() as StoredRateLimitEntry) : null;
   }
@@ -154,7 +155,7 @@ async function readRateLimitEntry(policy: RateLimitPolicy) {
 }
 
 export function getRateLimitProvider() {
-  return isFirebaseConfigured() ? "firebase" : "file";
+  return getServerPersistenceProvider("rate limit");
 }
 
 export async function getRateLimitStatus(policy: RateLimitPolicy) {
@@ -166,7 +167,7 @@ export async function registerRateLimitFailure(policy: RateLimitPolicy) {
   const id = createRateLimitId(policy.scope, policy.key);
   const now = Date.now();
 
-  if (isFirebaseConfigured()) {
+  if (getRateLimitProvider() === "firebase") {
     const currentEntry = await readRateLimitEntry(policy);
     const currentState = resolveEntryState(policy, currentEntry, now);
     const attempts = currentState.attempts + 1;
@@ -223,7 +224,7 @@ export async function registerRateLimitFailure(policy: RateLimitPolicy) {
 export async function clearRateLimit(policy: RateLimitPolicy) {
   const id = createRateLimitId(policy.scope, policy.key);
 
-  if (isFirebaseConfigured()) {
+  if (getRateLimitProvider() === "firebase") {
     await getFirebaseAdminDb().collection(RATE_LIMIT_COLLECTION).doc(id).delete();
     return;
   }

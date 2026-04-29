@@ -7,12 +7,14 @@ import { SectionCard } from "@/components/dashboard/SectionCard";
 import { ERP_DATA_EVENT } from "@/lib/app-events";
 import { getSectionById, type DashboardSection } from "@/lib/dashboard-sections";
 import {
+  fetchLotDerivedLocation,
   formatDateTime,
   formatUnits,
   getMovementStatusLabel,
   getMovementTypeLabel,
   loadLocations,
   loadMovements,
+  type LotDerivedLocationItem,
   normalizeText,
   type LocationItem,
   type MovementItem,
@@ -35,9 +37,22 @@ const COPY = {
     evidenceHelper: "Documentos de apoio ligados a laudos, transferencias e liberacoes.",
     currentLot: "Lote selecionado",
     currentLocation: "Localizacao atual",
+    derivedLocation: "Localizacao derivada",
     availableQuantity: "Volume rastreado",
     expiration: "Validade",
     linkedFlow: "Fluxo vinculado",
+    persistedLocationHelper: "Localizacao persistida no cadastro do lote.",
+    derivedLocationHelper: "Inferida a partir do historico de movimentacoes.",
+    derivedLocationUnavailable: "Historico derivado indisponivel no momento.",
+    locationNotConfirmed: "Nao confirmado",
+    possibleTransitTo: "Possivel transito para",
+    locationMismatchWarning: "A localizacao persistida pode divergir do historico recente.",
+    confidenceLabel: "Confianca",
+    confidenceValue: {
+      high: "Alta",
+      medium: "Media",
+      low: "Baixa",
+    },
     latestMovement: "Ultima movimentacao",
     noLots: "Nenhum lote encontrado para esse filtro.",
     noMovement: "Nenhuma movimentacao relacionada encontrada para este lote.",
@@ -77,9 +92,22 @@ const COPY = {
     evidenceHelper: "Support documents linked to reports, transfers and releases.",
     currentLot: "Selected lot",
     currentLocation: "Current location",
+    derivedLocation: "Derived location",
     availableQuantity: "Tracked volume",
     expiration: "Expiration",
     linkedFlow: "Linked flow",
+    persistedLocationHelper: "Location currently persisted in the lot record.",
+    derivedLocationHelper: "Inferred from the movement history.",
+    derivedLocationUnavailable: "Derived history is currently unavailable.",
+    locationNotConfirmed: "Not confirmed",
+    possibleTransitTo: "Possibly in transit to",
+    locationMismatchWarning: "The persisted location may diverge from recent history.",
+    confidenceLabel: "Confidence",
+    confidenceValue: {
+      high: "High",
+      medium: "Medium",
+      low: "Low",
+    },
     latestMovement: "Latest movement",
     noLots: "No lots found for this filter.",
     noMovement: "No related movements found for this lot.",
@@ -119,9 +147,22 @@ const COPY = {
     evidenceHelper: "Documentos de apoyo ligados a informes, transferencias y liberaciones.",
     currentLot: "Lote seleccionado",
     currentLocation: "Ubicacion actual",
+    derivedLocation: "Ubicacion derivada",
     availableQuantity: "Volumen rastreado",
     expiration: "Vencimiento",
     linkedFlow: "Flujo vinculado",
+    persistedLocationHelper: "Ubicacion persistida actualmente en el lote.",
+    derivedLocationHelper: "Inferida a partir del historial de movimientos.",
+    derivedLocationUnavailable: "El historial derivado no esta disponible por ahora.",
+    locationNotConfirmed: "No confirmado",
+    possibleTransitTo: "Posible transito hacia",
+    locationMismatchWarning: "La ubicacion persistida puede divergir del historial reciente.",
+    confidenceLabel: "Confianza",
+    confidenceValue: {
+      high: "Alta",
+      medium: "Media",
+      low: "Baja",
+    },
     latestMovement: "Ultimo movimiento",
     noLots: "No se encontraron lotes para este filtro.",
     noMovement: "No se encontraron movimientos relacionados con este lote.",
@@ -288,6 +329,8 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
   const [locations, setLocations] = useState<LocationItem[]>(() => loadLocations());
   const [qualityEvents, setQualityEvents] = useState<QualityEventItem[]>(() => loadQualityEvents());
   const [documents, setDocuments] = useState<DocumentItem[]>(() => loadDocuments());
+  const [derivedLotLocation, setDerivedLotLocation] = useState<LotDerivedLocationItem | null>(null);
+  const [derivedLotLocationFailed, setDerivedLotLocationFailed] = useState(false);
 
   useEffect(() => {
     const sync = () => {
@@ -369,6 +412,62 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
 
   const latestMovement = relatedMovements[0] ?? null;
 
+  useEffect(() => {
+    let isActive = true;
+
+    if (!selectedLot) {
+      setDerivedLotLocation(null);
+      setDerivedLotLocationFailed(false);
+      return () => {
+        isActive = false;
+      };
+    }
+
+    fetchLotDerivedLocation(selectedLot.code)
+      .then((payload) => {
+        if (!isActive) {
+          return;
+        }
+
+        setDerivedLotLocation(payload);
+        setDerivedLotLocationFailed(false);
+      })
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setDerivedLotLocation(null);
+        setDerivedLotLocationFailed(true);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [movements, selectedLot]);
+
+  const derivedStableLocationName = useMemo(() => {
+    if (!derivedLotLocation?.stableLocationId) {
+      return null;
+    }
+
+    return (
+      getLocationName(locations, derivedLotLocation.stableLocationId) ??
+      derivedLotLocation.stableLocationId
+    );
+  }, [derivedLotLocation, locations]);
+
+  const derivedInTransitLocationName = useMemo(() => {
+    if (!derivedLotLocation?.inTransitToLocationId) {
+      return null;
+    }
+
+    return (
+      getLocationName(locations, derivedLotLocation.inTransitToLocationId) ??
+      derivedLotLocation.inTransitToLocationId
+    );
+  }, [derivedLotLocation, locations]);
+
   return (
     <section className="space-y-8">
       <header className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] px-6 py-8 transition-colors">
@@ -447,7 +546,7 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
                 </div>
 
                 <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <SectionCard title={copy.currentLocation} value={selectedLot.location} helper={copy.linkedFlow} />
+                  <SectionCard title={copy.currentLocation} value={selectedLot.location} helper={copy.persistedLocationHelper} />
                   <SectionCard title={copy.availableQuantity} value={formatUnits(selectedLot.quantity, locale)} helper={copy.trackedLotsHelper} />
                   <SectionCard title={copy.expiration} value={formatExpirationDate(selectedLot.expiration, locale)} helper={copy.currentLot} />
                   <SectionCard
@@ -456,6 +555,43 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
                     helper={latestMovement ? getMovementRoute(latestMovement, locations, copy) : copy.noMovement}
                   />
                 </div>
+
+                {derivedLotLocation ? (
+                  <div
+                    className={`mt-4 rounded-2xl border px-4 py-4 ${
+                      derivedLotLocation.mismatch
+                        ? "border-amber-200 bg-amber-50/70"
+                        : "border-[var(--panel-border)] bg-[var(--panel-soft)]"
+                    }`}
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+                      {copy.derivedLocation}
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-[var(--foreground)]">
+                      {derivedLotLocation.confidence === "low"
+                        ? copy.locationNotConfirmed
+                        : derivedStableLocationName ?? copy.locationNotConfirmed}
+                    </p>
+                    <div className="mt-2 space-y-1 text-xs text-[var(--muted-foreground)]">
+                      <p>{copy.derivedLocationHelper}</p>
+                      <p>
+                        {copy.confidenceLabel}: {copy.confidenceValue[derivedLotLocation.confidence]}
+                      </p>
+                      {derivedInTransitLocationName ? (
+                        <p>
+                          {copy.possibleTransitTo} {derivedInTransitLocationName}
+                        </p>
+                      ) : null}
+                      {derivedLotLocation.mismatch ? (
+                        <p className="text-amber-700">{copy.locationMismatchWarning}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : derivedLotLocationFailed ? (
+                  <div className="mt-4 rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-soft)] px-4 py-4 text-xs text-[var(--muted-foreground)]">
+                    {copy.derivedLocationUnavailable}
+                  </div>
+                ) : null}
               </section>
 
               <Panel

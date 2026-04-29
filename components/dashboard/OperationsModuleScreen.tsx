@@ -38,17 +38,22 @@ import {
   type TaskItem,
 } from "@/lib/operations-data";
 import {
+  findMatchingProductReference,
   formatDateTime,
   formatUnits,
   getLocationUsedCapacity,
   getMovementTypeLabel,
   loadLocations,
   loadMovements,
+  normalizeReferenceText,
+  normalizeSkuIdentifier,
   normalizeText,
   type LocationItem,
   type MovementItem,
 } from "@/lib/inventory";
 import {
+  createProductLine as createProductRecord,
+  createLot as createLotRecord,
   loadCalendarEvents,
   loadCategories,
   loadDistributors,
@@ -63,16 +68,17 @@ import {
   loadReports,
   loadSuppliers,
   loadTasks,
+  ProductRequestError,
+  ProductVersionConflictError,
+  refreshProductLines,
   saveCalendarEvents,
   saveCategories,
   saveDistributors,
   saveDocuments,
   saveIncidents,
-  saveLots,
   saveNotifications,
   savePendingItems,
   savePlanningItems,
-  saveProductLines,
   saveQualityEvents,
   saveReports,
   saveSuppliers,
@@ -393,6 +399,95 @@ function resolveOperationalProductStatus(stock: number, target: number, coverage
   return PRODUCT_STATUS_STABLE;
 }
 
+function getDerivedProductMovementDelta(movement: MovementItem) {
+  if (movement.type === "transferencia") {
+    const transferStatus = movement.transferStatus ?? "recebida";
+
+    if (transferStatus === "cancelada" || transferStatus === "solicitada" || transferStatus === "em_separacao") {
+      return 0;
+    }
+
+    if (transferStatus === "em_transito") {
+      return -movement.quantity;
+    }
+
+    return 0;
+  }
+
+  if ((movement.status ?? "concluida") === "cancelada") {
+    return 0;
+  }
+
+  return movement.type === "entrada" ? movement.quantity : -movement.quantity;
+}
+
+function getDerivedProductStock(products: ProductLineItem[], movements: MovementItem[]) {
+  if (movements.length === 0) {
+    return new Map(products.map((product) => [product.sku, product.stock] as const));
+  }
+
+  const totalsByProductId = new Map<string, { stock: number; hasEffectiveMovement: boolean }>();
+  const totalsByProductName = new Map<string, { stock: number; hasEffectiveMovement: boolean }>();
+
+  for (const movement of movements) {
+    const delta = getDerivedProductMovementDelta(movement);
+
+    if (delta !== 0) {
+      if (movement.productId) {
+        const normalizedProductId = normalizeSkuIdentifier(movement.productId);
+        const currentById = totalsByProductId.get(normalizedProductId) ?? { stock: 0, hasEffectiveMovement: false };
+        currentById.stock += delta;
+        currentById.hasEffectiveMovement = true;
+        totalsByProductId.set(normalizedProductId, currentById);
+        continue;
+      }
+
+      const normalizedProductName = normalizeReferenceText(movement.product);
+
+      if (!normalizedProductName) {
+        continue;
+      }
+
+      const currentByName = totalsByProductName.get(normalizedProductName) ?? { stock: 0, hasEffectiveMovement: false };
+      currentByName.stock += delta;
+      currentByName.hasEffectiveMovement = true;
+      totalsByProductName.set(normalizedProductName, currentByName);
+    }
+  }
+
+  return new Map(
+    products.map((product) => {
+      const derivedById = totalsByProductId.get(normalizeSkuIdentifier(product.sku));
+
+      if (derivedById?.hasEffectiveMovement) {
+        return [product.sku, derivedById.stock] as const;
+      }
+
+      const derivedByName = totalsByProductName.get(normalizeReferenceText(product.product));
+
+      if (!derivedByName?.hasEffectiveMovement) {
+        return [product.sku, product.stock] as const;
+      }
+
+      return [product.sku, derivedByName.stock] as const;
+    }),
+  );
+}
+
+function getProductsWithDerivedStock(products: ProductLineItem[], movements: MovementItem[]) {
+  const derivedStockBySku = getDerivedProductStock(products, movements);
+
+  return products.map((product) => {
+    const derivedStock = derivedStockBySku.get(product.sku) ?? product.stock;
+
+    return {
+      ...product,
+      stock: derivedStock,
+      status: resolveOperationalProductStatus(derivedStock, product.target, product.coverageDays),
+    };
+  });
+}
+
 function useInventoryData() {
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [movements, setMovements] = useState<MovementItem[]>([]);
@@ -489,6 +584,7 @@ function LegacyProductsModule({ section }: { section: DashboardSection }) {
 
 function ProductsModule({ section }: { section: DashboardSection }) {
   const [products, setProducts] = useOperationsCollection(loadProductLines);
+  const { movements } = useInventoryData();
   const [query, setQuery] = useState("");
   const [statusFilterIndex, setStatusFilterIndex] = useState(0);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -512,15 +608,16 @@ function ProductsModule({ section }: { section: DashboardSection }) {
   ] as const;
 
   const activeStatusFilter = statusFilters[statusFilterIndex];
+  const derivedProducts = useMemo(() => getProductsWithDerivedStock(products, movements), [movements, products]);
 
   const filtered = useMemo(() => {
     const normalized = normalizeText(query);
-    return products.filter((item) => {
+    return derivedProducts.filter((item) => {
       const matchesQuery = normalizeText([item.product, item.sku, item.line, item.species, item.stage].join(" ")).includes(normalized);
       const matchesStatus = activeStatusFilter.value === "all" || item.status === activeStatusFilter.value;
       return matchesQuery && matchesStatus;
     });
-  }, [activeStatusFilter.value, products, query]);
+  }, [activeStatusFilter.value, derivedProducts, query]);
 
   const totalStock = filtered.reduce((sum, item) => sum + item.stock, 0);
   const critical = filtered.filter((item) => item.status === PRODUCT_STATUS_CRITICAL).length;
@@ -543,12 +640,21 @@ function ProductsModule({ section }: { section: DashboardSection }) {
     setIsFormOpen(false);
   }
 
-  function handleCreateProduct() {
+  async function reloadProductsAfterConflict() {
+    try {
+      setProducts(await refreshProductLines());
+    } catch {
+      setProducts(loadProductLines());
+    }
+  }
+
+  async function handleCreateProduct() {
+    const sku = normalizeSkuIdentifier(form.sku);
     const stock = Number(form.stock);
     const target = Number(form.target);
     const coverageDays = Number(form.coverageDays);
 
-    if (!form.sku.trim() || !form.product.trim() || !form.line.trim() || !form.stage.trim() || !form.package.trim()) {
+    if (!sku || !form.product.trim() || !form.line.trim() || !form.stage.trim() || !form.package.trim()) {
       setError("Preencha SKU, produto, linha, categoria e embalagem.");
       return;
     }
@@ -558,30 +664,53 @@ function ProductsModule({ section }: { section: DashboardSection }) {
       return;
     }
 
-    if (products.some((item) => item.sku.toLowerCase() === form.sku.trim().toLowerCase())) {
+    if (products.some((item) => normalizeSkuIdentifier(item.sku) === sku)) {
       setError("Ja existe um produto com esse SKU.");
       return;
     }
 
-    const nextProducts: ProductLineItem[] = [
-      {
-        sku: form.sku.trim(),
-        product: form.product.trim(),
-        line: form.line.trim(),
-        species: form.species,
-        stage: form.stage.trim(),
-        package: form.package.trim(),
-        stock,
-        target,
-        coverageDays,
-        status: resolveOperationalProductStatus(stock, target, coverageDays),
-      },
-      ...products,
-    ];
+    const product: ProductLineItem = {
+      sku,
+      product: form.product.trim(),
+      line: form.line.trim(),
+      species: form.species,
+      stage: form.stage.trim(),
+      package: form.package.trim(),
+      stock,
+      target,
+      coverageDays,
+      status: resolveOperationalProductStatus(stock, target, coverageDays),
+    };
 
-    setProducts(nextProducts);
-    saveProductLines(nextProducts);
-    resetForm();
+    try {
+      const createdProduct = await createProductRecord(product);
+      setProducts((currentProducts) => [
+        createdProduct,
+        ...currentProducts.filter(
+          (item) => normalizeSkuIdentifier(item.sku) !== createdProduct.sku,
+        ),
+      ]);
+      resetForm();
+    } catch (error) {
+      if (
+        error instanceof ProductVersionConflictError ||
+        (error instanceof ProductRequestError && error.status === 409)
+      ) {
+        await reloadProductsAfterConflict();
+        setError(
+          error instanceof ProductVersionConflictError
+            ? "O produto foi alterado por outra sessao. Recarreguei a lista antes de qualquer nova tentativa."
+            : error.message,
+        );
+        return;
+      }
+
+      setError(
+        error instanceof ProductRequestError
+          ? error.message
+          : "Nao foi possivel salvar o produto.",
+      );
+    }
   }
 
   function handleExportProducts() {
@@ -706,7 +835,9 @@ function ProductsModule({ section }: { section: DashboardSection }) {
 }
 
 function LowStockModule({ section }: { section: DashboardSection }) {
-  const [products] = useOperationsCollection(loadProductLines);
+  const [storedProducts] = useOperationsCollection(loadProductLines);
+  const { movements } = useInventoryData();
+  const products = useMemo(() => getProductsWithDerivedStock(storedProducts, movements), [movements, storedProducts]);
   const criticalItems = products.filter((item) => item.status !== "Estável");
 
   return (
@@ -803,7 +934,7 @@ function LegacyLotsModule({ section }: { section: DashboardSection }) {
 }
 
 function LotsModule({ section }: { section: DashboardSection }) {
-  const [lots, setLots] = useOperationsCollection(loadLots);
+  const [lots] = useOperationsCollection(loadLots);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
@@ -828,8 +959,14 @@ function LotsModule({ section }: { section: DashboardSection }) {
     setIsFormOpen(false);
   }
 
-  function handleCreateLot() {
+  async function handleCreateLot() {
     const quantity = Number(form.quantity);
+    const matchedProduct = findMatchingProductReference(
+      loadProductLines(),
+      form.product,
+    );
+    const canonicalProductName = matchedProduct?.product ?? form.product.trim();
+    const canonicalProductId = matchedProduct?.sku;
 
     if (!form.code.trim() || !form.product.trim() || !form.location.trim() || !form.expiration.trim()) {
       setError("Preencha codigo, produto, localizacao e validade.");
@@ -846,21 +983,24 @@ function LotsModule({ section }: { section: DashboardSection }) {
       return;
     }
 
-    const nextLots: LotItem[] = [
-      {
+    try {
+      await createLotRecord({
         code: form.code.trim(),
-        product: form.product.trim(),
+        product: canonicalProductName,
+        productId: canonicalProductId,
         location: form.location.trim(),
         expiration: form.expiration,
         quantity,
         status: form.status,
-      },
-      ...lots,
-    ];
-
-    setLots(nextLots);
-    saveLots(nextLots);
-    resetForm();
+      });
+      resetForm();
+    } catch (creationError) {
+      setError(
+        creationError instanceof Error
+          ? creationError.message
+          : "Nao foi possivel salvar o lote.",
+      );
+    }
   }
 
   return (

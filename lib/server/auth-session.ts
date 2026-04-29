@@ -21,6 +21,7 @@ import { readErpResource } from "@/lib/server/erp-state";
 const AUTH_SESSION_COOKIE_NAME = "fluxy-auth-session";
 const AUTH_SESSION_DURATION_SECONDS = 60 * 60 * 12;
 const DEV_FALLBACK_AUTH_SECRET = "fluxy-dev-auth-secret";
+const MIN_PRODUCTION_AUTH_SECRET_LENGTH = 32;
 
 type SessionTokenPayload = {
   accountId: string;
@@ -37,7 +38,32 @@ export type ServerSession = {
 };
 
 function getAuthSecret() {
-  return process.env.AUTH_SECRET ?? DEV_FALLBACK_AUTH_SECRET;
+  const configuredSecret = process.env.AUTH_SECRET?.trim();
+
+  if (configuredSecret) {
+    if (
+      process.env.NODE_ENV === "production" &&
+      configuredSecret.length < MIN_PRODUCTION_AUTH_SECRET_LENGTH
+    ) {
+      throw new Error(
+        `AUTH_SECRET precisa ter pelo menos ${MIN_PRODUCTION_AUTH_SECRET_LENGTH} caracteres em producao.`,
+      );
+    }
+
+    return configuredSecret;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("AUTH_SECRET obrigatorio em producao.");
+  }
+
+  if (process.env.ALLOW_INSECURE_DEV_AUTH_SECRET === "true") {
+    return DEV_FALLBACK_AUTH_SECRET;
+  }
+
+  throw new Error(
+    "AUTH_SECRET obrigatorio. Em desenvolvimento, habilite ALLOW_INSECURE_DEV_AUTH_SECRET=true apenas se necessario.",
+  );
 }
 
 function getSessionCookieOptions(maxAge = AUTH_SESSION_DURATION_SECONDS) {
@@ -46,7 +72,7 @@ function getSessionCookieOptions(maxAge = AUTH_SESSION_DURATION_SECONDS) {
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    ...(maxAge > 0 ? {} : { maxAge }),
+    maxAge,
   };
 }
 
@@ -117,7 +143,11 @@ export async function loadServerUserAccounts() {
       )
       .filter((item): item is UserAccount => item !== null);
     return accounts.length > 0 ? accounts : normalizeUserAccounts([...INITIAL_USER_ACCOUNTS]);
-  } catch {
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      throw error;
+    }
+
     return normalizeUserAccounts([...INITIAL_USER_ACCOUNTS]);
   }
 }

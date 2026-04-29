@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
+import { clearLocalErpResourceCaches } from "@/lib/erp-remote-sync";
 import { clearCachedUserAccounts, clearLegacyClientAuthState } from "@/lib/user-accounts";
 
 type LoginScreenProps = {
@@ -43,6 +44,7 @@ export function LoginScreen({ nextPath, resetToken }: LoginScreenProps) {
   useEffect(() => {
     clearLegacyClientAuthState();
     clearCachedUserAccounts();
+    clearLocalErpResourceCaches();
   }, []);
 
   useEffect(() => {
@@ -347,7 +349,9 @@ export function LoginScreen({ nextPath, resetToken }: LoginScreenProps) {
           </form>
         ) : null}
 
-        {mode === "login" && process.env.NODE_ENV !== "production" ? (
+        {mode === "login" &&
+        process.env.NODE_ENV !== "production" &&
+        process.env.NEXT_PUBLIC_ENABLE_DEV_CREDENTIAL_HINTS === "true" ? (
           <div className="mt-5 rounded-lg bg-slate-100 p-3 text-left text-xs text-slate-700">
             <strong>Acessos locais de desenvolvimento:</strong>
             <ul className="mt-2 list-disc space-y-1 pl-5">
