@@ -496,6 +496,7 @@ export const ERP_RESOURCE_SCHEMAS = {
     maxItems: 10_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         title: stringField({ maxLength: 240 }),
         owner: stringField({ maxLength: 120 }),
         area: stringField({ maxLength: 120 }),
@@ -504,12 +505,13 @@ export const ERP_RESOURCE_SCHEMAS = {
       },
     },
     identityLabel: "title/owner/due",
-    getIdentity: (item) => `${item.title}::${item.owner}::${item.due}`,
+    getIdentity: (item) => item.id ?? `${item.title}::${item.owner}::${item.due}`,
   }),
   "operations.tasks": createResourceSchema({
     maxItems: 10_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         title: stringField({ maxLength: 240 }),
         shift: stringField({ maxLength: 60 }),
         owner: stringField({ maxLength: 120 }),
@@ -519,7 +521,7 @@ export const ERP_RESOURCE_SCHEMAS = {
       },
     },
     identityLabel: "title/owner/shift",
-    getIdentity: (item) => `${item.title}::${item.owner}::${item.shift}`,
+    getIdentity: (item) => item.id ?? `${item.title}::${item.owner}::${item.shift}`,
   }),
   "operations.distributors": createResourceSchema({
     maxItems: 5_000,
@@ -540,6 +542,7 @@ export const ERP_RESOURCE_SCHEMAS = {
     maxItems: 10_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         title: stringField({ maxLength: 240 }),
         area: stringField({ maxLength: 120 }),
         severity: enumField(INCIDENT_SEVERITY),
@@ -554,6 +557,7 @@ export const ERP_RESOURCE_SCHEMAS = {
     maxItems: 10_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         title: stringField({ maxLength: 240 }),
         type: stringField({ maxLength: 120 }),
         area: stringField({ maxLength: 120 }),

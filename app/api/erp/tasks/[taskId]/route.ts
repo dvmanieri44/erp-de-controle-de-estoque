@@ -8,7 +8,6 @@ import {
 import { writeAuditLog } from "@/lib/server/audit-log";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
-  createInUseErrorHandler,
   createPayloadErrorHandler,
   createStatusMessageErrorHandler,
   getErpApiErrorResponse,
@@ -16,47 +15,39 @@ import {
   readJsonObjectBody,
 } from "@/lib/server/erp-api-errors";
 import {
-  deleteLocation,
-  getInventoryLocationVersionConflictPayload,
-  getLocationById,
-  InventoryLocationConflictError,
-  InventoryLocationInUseError,
-  InventoryLocationNotFoundError,
-  requireInventoryLocationBaseVersion,
-  updateLocation,
-} from "@/lib/server/inventory-locations";
+  deleteTask,
+  getTaskById,
+  getTaskVersionConflictPayload,
+  requireTaskBaseVersion,
+  TaskConflictError,
+  TaskNotFoundError,
+  updateTask,
+} from "@/lib/server/tasks";
 import { getRequestMetadata } from "@/lib/server/request-metadata";
 
 export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
-    locationId: string;
+    taskId: string;
   }>;
 };
 
-const LOCATIONS_RESOURCE_ID = "inventory.locations";
+const TASKS_RESOURCE_ID = "operations.tasks";
 
-function getLocationTarget(locationId: string) {
+function getTaskTarget(taskId: string) {
   return {
     accountId: null,
-    resource: `${LOCATIONS_RESOURCE_ID}:${locationId}`,
+    resource: `${TASKS_RESOURCE_ID}:${taskId}`,
   };
 }
 
-const getLocationNotFoundResponse = createStatusMessageErrorHandler(
-  (error): error is InventoryLocationNotFoundError =>
-    error instanceof InventoryLocationNotFoundError,
+const getTaskNotFoundResponse = createStatusMessageErrorHandler(
+  (error): error is TaskNotFoundError => error instanceof TaskNotFoundError,
 );
-const getLocationConflictResponse = createPayloadErrorHandler(
-  (error): error is InventoryLocationConflictError =>
-    error instanceof InventoryLocationConflictError,
-  getInventoryLocationVersionConflictPayload,
-);
-const getLocationInUseResponse = createInUseErrorHandler(
-  (error): error is InventoryLocationInUseError =>
-    error instanceof InventoryLocationInUseError,
-  "LOCATION_IN_USE",
+const getTaskConflictResponse = createPayloadErrorHandler(
+  (error): error is TaskConflictError => error instanceof TaskConflictError,
+  getTaskVersionConflictPayload,
 );
 
 export async function GET(_: Request, context: RouteContext) {
@@ -67,14 +58,14 @@ export async function GET(_: Request, context: RouteContext) {
   }
 
   try {
-    const { locationId } = await context.params;
-    assertCanReadErpResource(session, LOCATIONS_RESOURCE_ID);
-    const location = await getLocationById(locationId);
-    return NextResponse.json({ location });
+    const { taskId } = await context.params;
+    assertCanReadErpResource(session, TASKS_RESOURCE_ID);
+    const task = await getTaskById(taskId);
+    return NextResponse.json({ task });
   } catch (error) {
     return getErpApiErrorResponse(error, {
-      fallbackErrorMessage: "Falha ao carregar a localizacao.",
-      handlers: [getLocationNotFoundResponse],
+      fallbackErrorMessage: "Falha ao carregar a tarefa.",
+      handlers: [getTaskNotFoundResponse],
     });
   }
 }
@@ -87,52 +78,47 @@ export async function PUT(request: Request, context: RouteContext) {
     return getUnauthorizedErpResponse();
   }
 
-  const { locationId } = await context.params;
+  const { taskId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanWriteErpResource(session, TASKS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const baseVersion = requireInventoryLocationBaseVersion(
-      body.baseVersion,
-      "atualizar",
-    );
-    const location = await updateLocation(
-      locationId,
-      body.location,
-      { baseVersion },
-    );
+    const baseVersion = requireTaskBaseVersion(body.baseVersion, "atualizar");
+    const task = await updateTask(taskId, body.task, {
+      baseVersion,
+    });
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.updated",
+      action: "erp.task.updated",
       outcome: "success",
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getTaskTarget(taskId),
       request: requestMetadata,
       metadata: {
-        version: location.version,
+        version: task.version,
       },
     });
 
-    return NextResponse.json({ location });
+    return NextResponse.json({ task });
   } catch (error) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.updated",
+      action: "erp.task.updated",
       outcome,
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getTaskTarget(taskId),
       request: requestMetadata,
       metadata: {
         error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -140,9 +126,9 @@ export async function PUT(request: Request, context: RouteContext) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para atualizacao da localizacao.",
-      fallbackErrorMessage: "Falha ao atualizar a localizacao.",
-      handlers: [getLocationNotFoundResponse, getLocationConflictResponse],
+      syntaxErrorMessage: "JSON invalido para atualizacao da tarefa.",
+      fallbackErrorMessage: "Falha ao atualizar a tarefa.",
+      handlers: [getTaskNotFoundResponse, getTaskConflictResponse],
     });
   }
 }
@@ -155,38 +141,35 @@ export async function DELETE(request: Request, context: RouteContext) {
     return getUnauthorizedErpResponse();
   }
 
-  const { locationId } = await context.params;
+  const { taskId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanWriteErpResource(session, TASKS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const baseVersion = requireInventoryLocationBaseVersion(
-      body.baseVersion,
-      "excluir",
-    );
-    const deletedLocation = await deleteLocation(locationId, baseVersion);
+    const baseVersion = requireTaskBaseVersion(body.baseVersion, "excluir");
+    const deletedTask = await deleteTask(taskId, baseVersion);
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.deleted",
+      action: "erp.task.deleted",
       outcome: "success",
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getTaskTarget(taskId),
       request: requestMetadata,
       metadata: {
-        version: deletedLocation.version,
-        deletedAt: deletedLocation.deletedAt,
+        version: deletedTask.version,
+        deletedAt: deletedTask.deletedAt,
       },
     });
 
     return NextResponse.json({
-      locationId: deletedLocation.id,
-      version: deletedLocation.version,
-      deletedAt: deletedLocation.deletedAt,
+      taskId: deletedTask.id,
+      version: deletedTask.version,
+      deletedAt: deletedTask.deletedAt,
     });
   } catch (error) {
     const outcome =
@@ -194,14 +177,14 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.deleted",
+      action: "erp.task.deleted",
       outcome,
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getTaskTarget(taskId),
       request: requestMetadata,
       metadata: {
         error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -209,13 +192,9 @@ export async function DELETE(request: Request, context: RouteContext) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para exclusao da localizacao.",
-      fallbackErrorMessage: "Falha ao excluir a localizacao.",
-      handlers: [
-        getLocationNotFoundResponse,
-        getLocationConflictResponse,
-        getLocationInUseResponse,
-      ],
+      syntaxErrorMessage: "JSON invalido para exclusao da tarefa.",
+      fallbackErrorMessage: "Falha ao excluir a tarefa.",
+      handlers: [getTaskNotFoundResponse, getTaskConflictResponse],
     });
   }
 }

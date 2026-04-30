@@ -8,7 +8,6 @@ import {
 import { writeAuditLog } from "@/lib/server/audit-log";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
-  createInUseErrorHandler,
   createPayloadErrorHandler,
   createStatusMessageErrorHandler,
   getErpApiErrorResponse,
@@ -16,47 +15,41 @@ import {
   readJsonObjectBody,
 } from "@/lib/server/erp-api-errors";
 import {
-  deleteLocation,
-  getInventoryLocationVersionConflictPayload,
-  getLocationById,
-  InventoryLocationConflictError,
-  InventoryLocationInUseError,
-  InventoryLocationNotFoundError,
-  requireInventoryLocationBaseVersion,
-  updateLocation,
-} from "@/lib/server/inventory-locations";
+  deletePendingItem,
+  getPendingItemById,
+  getPendingVersionConflictPayload,
+  PendingConflictError,
+  PendingNotFoundError,
+  requirePendingBaseVersion,
+  updatePendingItem,
+} from "@/lib/server/pending-items";
 import { getRequestMetadata } from "@/lib/server/request-metadata";
 
 export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
-    locationId: string;
+    pendingId: string;
   }>;
 };
 
-const LOCATIONS_RESOURCE_ID = "inventory.locations";
+const PENDING_RESOURCE_ID = "operations.pending";
 
-function getLocationTarget(locationId: string) {
+function getPendingTarget(pendingId: string) {
   return {
     accountId: null,
-    resource: `${LOCATIONS_RESOURCE_ID}:${locationId}`,
+    resource: `${PENDING_RESOURCE_ID}:${pendingId}`,
   };
 }
 
-const getLocationNotFoundResponse = createStatusMessageErrorHandler(
-  (error): error is InventoryLocationNotFoundError =>
-    error instanceof InventoryLocationNotFoundError,
+const getPendingNotFoundResponse = createStatusMessageErrorHandler(
+  (error): error is PendingNotFoundError =>
+    error instanceof PendingNotFoundError,
 );
-const getLocationConflictResponse = createPayloadErrorHandler(
-  (error): error is InventoryLocationConflictError =>
-    error instanceof InventoryLocationConflictError,
-  getInventoryLocationVersionConflictPayload,
-);
-const getLocationInUseResponse = createInUseErrorHandler(
-  (error): error is InventoryLocationInUseError =>
-    error instanceof InventoryLocationInUseError,
-  "LOCATION_IN_USE",
+const getPendingConflictResponse = createPayloadErrorHandler(
+  (error): error is PendingConflictError =>
+    error instanceof PendingConflictError,
+  getPendingVersionConflictPayload,
 );
 
 export async function GET(_: Request, context: RouteContext) {
@@ -67,14 +60,14 @@ export async function GET(_: Request, context: RouteContext) {
   }
 
   try {
-    const { locationId } = await context.params;
-    assertCanReadErpResource(session, LOCATIONS_RESOURCE_ID);
-    const location = await getLocationById(locationId);
-    return NextResponse.json({ location });
+    const { pendingId } = await context.params;
+    assertCanReadErpResource(session, PENDING_RESOURCE_ID);
+    const item = await getPendingItemById(pendingId);
+    return NextResponse.json({ item });
   } catch (error) {
     return getErpApiErrorResponse(error, {
-      fallbackErrorMessage: "Falha ao carregar a localizacao.",
-      handlers: [getLocationNotFoundResponse],
+      fallbackErrorMessage: "Falha ao carregar a pendencia.",
+      handlers: [getPendingNotFoundResponse],
     });
   }
 }
@@ -87,52 +80,50 @@ export async function PUT(request: Request, context: RouteContext) {
     return getUnauthorizedErpResponse();
   }
 
-  const { locationId } = await context.params;
+  const { pendingId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanWriteErpResource(session, PENDING_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const baseVersion = requireInventoryLocationBaseVersion(
+    const baseVersion = requirePendingBaseVersion(
       body.baseVersion,
       "atualizar",
     );
-    const location = await updateLocation(
-      locationId,
-      body.location,
-      { baseVersion },
-    );
+    const item = await updatePendingItem(pendingId, body.item, {
+      baseVersion,
+    });
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.updated",
+      action: "erp.pending.updated",
       outcome: "success",
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getPendingTarget(pendingId),
       request: requestMetadata,
       metadata: {
-        version: location.version,
+        version: item.version,
       },
     });
 
-    return NextResponse.json({ location });
+    return NextResponse.json({ item });
   } catch (error) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.updated",
+      action: "erp.pending.updated",
       outcome,
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getPendingTarget(pendingId),
       request: requestMetadata,
       metadata: {
         error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -140,9 +131,9 @@ export async function PUT(request: Request, context: RouteContext) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para atualizacao da localizacao.",
-      fallbackErrorMessage: "Falha ao atualizar a localizacao.",
-      handlers: [getLocationNotFoundResponse, getLocationConflictResponse],
+      syntaxErrorMessage: "JSON invalido para atualizacao da pendencia.",
+      fallbackErrorMessage: "Falha ao atualizar a pendencia.",
+      handlers: [getPendingNotFoundResponse, getPendingConflictResponse],
     });
   }
 }
@@ -155,38 +146,35 @@ export async function DELETE(request: Request, context: RouteContext) {
     return getUnauthorizedErpResponse();
   }
 
-  const { locationId } = await context.params;
+  const { pendingId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanWriteErpResource(session, PENDING_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const baseVersion = requireInventoryLocationBaseVersion(
-      body.baseVersion,
-      "excluir",
-    );
-    const deletedLocation = await deleteLocation(locationId, baseVersion);
+    const baseVersion = requirePendingBaseVersion(body.baseVersion, "excluir");
+    const deletedItem = await deletePendingItem(pendingId, baseVersion);
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.deleted",
+      action: "erp.pending.deleted",
       outcome: "success",
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getPendingTarget(pendingId),
       request: requestMetadata,
       metadata: {
-        version: deletedLocation.version,
-        deletedAt: deletedLocation.deletedAt,
+        version: deletedItem.version,
+        deletedAt: deletedItem.deletedAt,
       },
     });
 
     return NextResponse.json({
-      locationId: deletedLocation.id,
-      version: deletedLocation.version,
-      deletedAt: deletedLocation.deletedAt,
+      pendingId: deletedItem.id,
+      version: deletedItem.version,
+      deletedAt: deletedItem.deletedAt,
     });
   } catch (error) {
     const outcome =
@@ -194,14 +182,14 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.deleted",
+      action: "erp.pending.deleted",
       outcome,
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getPendingTarget(pendingId),
       request: requestMetadata,
       metadata: {
         error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -209,13 +197,9 @@ export async function DELETE(request: Request, context: RouteContext) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para exclusao da localizacao.",
-      fallbackErrorMessage: "Falha ao excluir a localizacao.",
-      handlers: [
-        getLocationNotFoundResponse,
-        getLocationConflictResponse,
-        getLocationInUseResponse,
-      ],
+      syntaxErrorMessage: "JSON invalido para exclusao da pendencia.",
+      fallbackErrorMessage: "Falha ao excluir a pendencia.",
+      handlers: [getPendingNotFoundResponse, getPendingConflictResponse],
     });
   }
 }

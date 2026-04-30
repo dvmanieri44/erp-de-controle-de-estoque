@@ -51,8 +51,18 @@ const DOCUMENTS_STORAGE_KEY = "erp.operations.documents";
 const CALENDAR_EVENTS_STORAGE_KEY = "erp.operations.calendar";
 const PRODUCTS_ENDPOINT = "/api/erp/products";
 const LOTS_ENDPOINT = "/api/erp/lots";
+const QUALITY_EVENTS_ENDPOINT = "/api/erp/quality-events";
+const INCIDENTS_ENDPOINT = "/api/erp/incidents";
+const DOCUMENTS_ENDPOINT = "/api/erp/documents";
+const TASKS_ENDPOINT = "/api/erp/tasks";
+const PENDING_ENDPOINT = "/api/erp/pending";
 let productsSyncPromise: Promise<VersionedProductLineItem[]> | null = null;
 let lotsSyncPromise: Promise<LotItem[]> | null = null;
+let qualityEventsSyncPromise: Promise<VersionedQualityEventItem[]> | null = null;
+let incidentsSyncPromise: Promise<VersionedIncidentItem[]> | null = null;
+let documentsSyncPromise: Promise<VersionedDocumentItem[]> | null = null;
+let tasksSyncPromise: Promise<VersionedTaskItem[]> | null = null;
+let pendingItemsSyncPromise: Promise<VersionedPendingItem[]> | null = null;
 
 export type VersionedProductLineItem = ProductLineItem & {
   version?: number;
@@ -60,6 +70,35 @@ export type VersionedProductLineItem = ProductLineItem & {
 };
 
 type VersionedLotItem = LotItem & {
+  version?: number;
+  updatedAt?: string | null;
+};
+
+export type VersionedQualityEventItem = QualityEventItem & {
+  version?: number;
+  updatedAt?: string | null;
+};
+
+export type VersionedIncidentItem = IncidentItem & {
+  id: string;
+  version?: number;
+  updatedAt?: string | null;
+};
+
+export type VersionedDocumentItem = DocumentItem & {
+  id: string;
+  version?: number;
+  versionUpdatedAt?: string | null;
+};
+
+export type VersionedTaskItem = TaskItem & {
+  id: string;
+  version?: number;
+  updatedAt?: string | null;
+};
+
+export type VersionedPendingItem = PendingItem & {
+  id: string;
   version?: number;
   updatedAt?: string | null;
 };
@@ -82,6 +121,61 @@ type InventoryLotsListResponse = {
 
 type InventoryLotMutationResponse = {
   lot?: unknown;
+  error?: unknown;
+  currentVersion?: unknown;
+};
+
+type QualityEventsListResponse = {
+  items?: unknown;
+  error?: unknown;
+};
+
+type QualityEventMutationResponse = {
+  event?: unknown;
+  error?: unknown;
+  currentVersion?: unknown;
+};
+
+type IncidentsListResponse = {
+  items?: unknown;
+  error?: unknown;
+};
+
+type IncidentMutationResponse = {
+  incident?: unknown;
+  error?: unknown;
+  currentVersion?: unknown;
+};
+
+type DocumentsListResponse = {
+  items?: unknown;
+  error?: unknown;
+};
+
+type DocumentMutationResponse = {
+  document?: unknown;
+  error?: unknown;
+  currentVersion?: unknown;
+};
+
+type TasksListResponse = {
+  items?: unknown;
+  error?: unknown;
+};
+
+type TaskMutationResponse = {
+  task?: unknown;
+  error?: unknown;
+  currentVersion?: unknown;
+};
+
+type PendingItemsListResponse = {
+  items?: unknown;
+  error?: unknown;
+};
+
+type PendingItemMutationResponse = {
+  item?: unknown;
   error?: unknown;
   currentVersion?: unknown;
 };
@@ -126,6 +220,106 @@ export class ProductVersionConflictError extends ProductRequestError {
   }
 }
 
+export class QualityEventRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "QualityEventRequestError";
+    this.status = status;
+  }
+}
+
+export class QualityEventVersionConflictError extends QualityEventRequestError {
+  currentVersion: number;
+
+  constructor(currentVersion: number) {
+    super("VERSION_CONFLICT", 409);
+    this.name = "QualityEventVersionConflictError";
+    this.currentVersion = currentVersion;
+  }
+}
+
+export class IncidentRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "IncidentRequestError";
+    this.status = status;
+  }
+}
+
+export class IncidentVersionConflictError extends IncidentRequestError {
+  currentVersion: number;
+
+  constructor(currentVersion: number) {
+    super("VERSION_CONFLICT", 409);
+    this.name = "IncidentVersionConflictError";
+    this.currentVersion = currentVersion;
+  }
+}
+
+export class DocumentRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "DocumentRequestError";
+    this.status = status;
+  }
+}
+
+export class DocumentVersionConflictError extends DocumentRequestError {
+  currentVersion: number;
+
+  constructor(currentVersion: number) {
+    super("VERSION_CONFLICT", 409);
+    this.name = "DocumentVersionConflictError";
+    this.currentVersion = currentVersion;
+  }
+}
+
+export class TaskRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "TaskRequestError";
+    this.status = status;
+  }
+}
+
+export class TaskVersionConflictError extends TaskRequestError {
+  currentVersion: number;
+
+  constructor(currentVersion: number) {
+    super("VERSION_CONFLICT", 409);
+    this.name = "TaskVersionConflictError";
+    this.currentVersion = currentVersion;
+  }
+}
+
+export class PendingItemRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "PendingItemRequestError";
+    this.status = status;
+  }
+}
+
+export class PendingItemVersionConflictError extends PendingItemRequestError {
+  currentVersion: number;
+
+  constructor(currentVersion: number) {
+    super("VERSION_CONFLICT", 409);
+    this.name = "PendingItemVersionConflictError";
+    this.currentVersion = currentVersion;
+  }
+}
+
 function cloneCollection<T>(items: readonly T[]) {
   return items.map((item) => ({ ...item }));
 }
@@ -159,6 +353,1579 @@ function saveCollection<T>(key: string, items: T[], resource: ErpResourceId) {
   window.localStorage.setItem(key, JSON.stringify(items));
   dispatchErpDataEvent();
   persistResourceToBackendInBackground(resource, items as never[]);
+}
+
+function isQualityEventStatus(
+  value: unknown,
+): value is QualityEventItem["status"] {
+  return QUALITY_EVENTS.some((item) => item.status === value);
+}
+
+function normalizeQualityEventItem(
+  value: unknown,
+): VersionedQualityEventItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+
+  if (
+    typeof item.title !== "string" ||
+    typeof item.lot !== "string" ||
+    typeof item.area !== "string" ||
+    typeof item.owner !== "string" ||
+    !isQualityEventStatus(item.status)
+  ) {
+    return null;
+  }
+
+  return {
+    id: typeof item.id === "string" ? item.id : undefined,
+    title: item.title,
+    lot: item.lot,
+    area: item.area,
+    owner: item.owner,
+    status: item.status,
+    version:
+      typeof item.version === "number" &&
+      Number.isInteger(item.version) &&
+      item.version >= 1
+        ? item.version
+        : undefined,
+    updatedAt:
+      typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+  };
+}
+
+
+function sortQualityEvents<TValue extends QualityEventItem>(items: TValue[]) {
+  return [...items].sort((left, right) => {
+    const byLot = left.lot.localeCompare(right.lot);
+    return byLot === 0 ? left.title.localeCompare(right.title) : byLot;
+  });
+}
+
+function readStoredQualityEvents() {
+  if (typeof window === "undefined") {
+    return cloneCollection(QUALITY_EVENTS) as VersionedQualityEventItem[];
+  }
+
+  const raw = window.localStorage.getItem(QUALITY_EVENTS_STORAGE_KEY);
+
+  if (!raw) {
+    return cloneCollection(QUALITY_EVENTS) as VersionedQualityEventItem[];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return cloneCollection(QUALITY_EVENTS) as VersionedQualityEventItem[];
+    }
+
+    return parsed
+      .map((item) => normalizeQualityEventItem(item))
+      .filter((item): item is VersionedQualityEventItem => item !== null);
+  } catch {
+    return cloneCollection(QUALITY_EVENTS) as VersionedQualityEventItem[];
+  }
+}
+
+function writeStoredQualityEvents(events: VersionedQualityEventItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const serializedEvents = JSON.stringify(sortQualityEvents(events));
+
+  if (window.localStorage.getItem(QUALITY_EVENTS_STORAGE_KEY) === serializedEvents) {
+    return;
+  }
+
+  window.localStorage.setItem(QUALITY_EVENTS_STORAGE_KEY, serializedEvents);
+  dispatchErpDataEvent();
+}
+
+function upsertStoredQualityEvent(event: VersionedQualityEventItem) {
+  const current = readStoredQualityEvents();
+
+  writeStoredQualityEvents([
+    event,
+    ...current.filter((item) =>
+      event.id ? item.id !== event.id : item.title !== event.title || item.lot !== event.lot,
+    ),
+  ]);
+}
+
+function removeStoredQualityEvent(eventId: string) {
+  writeStoredQualityEvents(
+    readStoredQualityEvents().filter((item) => item.id !== eventId),
+  );
+}
+
+function getQualityEventResponseItems(
+  payload: QualityEventsListResponse | QualityEventMutationResponse | null,
+) {
+  return payload && "items" in payload ? payload.items : undefined;
+}
+
+function getQualityEventResponseItem(
+  payload: QualityEventsListResponse | QualityEventMutationResponse | null,
+) {
+  return payload && "event" in payload ? payload.event : undefined;
+}
+
+function stripQualityEventVersion<
+  TValue extends VersionedQualityEventItem | Partial<VersionedQualityEventItem>,
+>(event: TValue) {
+  const payload = { ...event };
+  delete payload.version;
+  delete payload.updatedAt;
+  return payload;
+}
+
+async function parseQualityEventApiPayload(
+  response: Response,
+  fallbackMessage: string,
+) {
+  const payload = (await response.json().catch(() => null)) as
+    | QualityEventsListResponse
+    | QualityEventMutationResponse
+    | null;
+
+  if (response.ok) {
+    return payload;
+  }
+
+  const currentVersion =
+    payload && "currentVersion" in payload ? payload.currentVersion : undefined;
+
+  if (
+    payload &&
+    payload.error === "VERSION_CONFLICT" &&
+    typeof currentVersion === "number"
+  ) {
+    throw new QualityEventVersionConflictError(currentVersion);
+  }
+
+  const message =
+    payload && typeof payload.error === "string"
+      ? payload.error
+      : fallbackMessage;
+
+  throw new QualityEventRequestError(message, response.status);
+}
+
+async function fetchQualityEventsFromServer() {
+  const response = await fetch(QUALITY_EVENTS_ENDPOINT, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const payload = await parseQualityEventApiPayload(
+    response,
+    "Nao foi possivel carregar os eventos de qualidade.",
+  );
+  const items = getQualityEventResponseItems(payload);
+
+  if (!Array.isArray(items)) {
+    throw new QualityEventRequestError(
+      "Resposta invalida ao carregar os eventos de qualidade.",
+      response.status,
+    );
+  }
+
+  const events = items
+    .map((item) => normalizeQualityEventItem(item))
+    .filter((item): item is VersionedQualityEventItem => item !== null);
+
+  writeStoredQualityEvents(events);
+  return events;
+}
+
+function syncQualityEventsFromServerInBackground() {
+  if (typeof window === "undefined") {
+    return Promise.resolve(
+      cloneCollection(QUALITY_EVENTS) as VersionedQualityEventItem[],
+    );
+  }
+
+  if (!qualityEventsSyncPromise) {
+    const nextSync = fetchQualityEventsFromServer().finally(() => {
+      if (qualityEventsSyncPromise === nextSync) {
+        qualityEventsSyncPromise = null;
+      }
+    });
+    qualityEventsSyncPromise = nextSync;
+  }
+
+  return qualityEventsSyncPromise;
+}
+
+export async function refreshQualityEvents() {
+  if (typeof window === "undefined") {
+    return cloneCollection(QUALITY_EVENTS) as VersionedQualityEventItem[];
+  }
+
+  return syncQualityEventsFromServerInBackground();
+}
+
+export async function createQualityEvent(event: QualityEventItem) {
+  const response = await fetch(QUALITY_EVENTS_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      event: stripQualityEventVersion(event),
+    }),
+  });
+  const payload = await parseQualityEventApiPayload(
+    response,
+    "Nao foi possivel criar o evento de qualidade.",
+  );
+  const createdEvent = normalizeQualityEventItem(
+    getQualityEventResponseItem(payload),
+  );
+
+  if (!createdEvent) {
+    throw new QualityEventRequestError(
+      "Resposta invalida ao criar o evento de qualidade.",
+      response.status,
+    );
+  }
+
+  upsertStoredQualityEvent(createdEvent);
+  return createdEvent;
+}
+
+export async function updateQualityEvent(
+  eventId: string,
+  eventPatch: Partial<QualityEventItem>,
+  baseVersion: number,
+) {
+  try {
+    const response = await fetch(
+      `${QUALITY_EVENTS_ENDPOINT}/${encodeURIComponent(eventId)}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          event: stripQualityEventVersion(eventPatch),
+          baseVersion,
+        }),
+      },
+    );
+    const payload = await parseQualityEventApiPayload(
+      response,
+      "Nao foi possivel atualizar o evento de qualidade.",
+    );
+    const updatedEvent = normalizeQualityEventItem(
+      getQualityEventResponseItem(payload),
+    );
+
+    if (!updatedEvent) {
+      throw new QualityEventRequestError(
+        "Resposta invalida ao atualizar o evento de qualidade.",
+        response.status,
+      );
+    }
+
+    upsertStoredQualityEvent(updatedEvent);
+    return updatedEvent;
+  } catch (error) {
+    if (error instanceof QualityEventVersionConflictError) {
+      await refreshQualityEvents();
+    }
+
+    throw error;
+  }
+}
+
+export async function deleteQualityEvent(
+  eventId: string,
+  baseVersion: number,
+) {
+  try {
+    const response = await fetch(
+      `${QUALITY_EVENTS_ENDPOINT}/${encodeURIComponent(eventId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          baseVersion,
+        }),
+      },
+    );
+
+    await parseQualityEventApiPayload(
+      response,
+      "Nao foi possivel excluir o evento de qualidade.",
+    );
+    removeStoredQualityEvent(eventId);
+  } catch (error) {
+    if (error instanceof QualityEventVersionConflictError) {
+      await refreshQualityEvents();
+    }
+
+    throw error;
+  }
+}
+
+function isIncidentSeverity(
+  value: unknown,
+): value is IncidentItem["severity"] {
+  return INCIDENTS.some((item) => item.severity === value);
+}
+
+function isIncidentStatus(value: unknown): value is IncidentItem["status"] {
+  return INCIDENTS.some((item) => item.status === value);
+}
+
+function normalizeIncidentItem(value: unknown): VersionedIncidentItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+
+  if (
+    typeof item.title !== "string" ||
+    typeof item.area !== "string" ||
+    typeof item.owner !== "string" ||
+    !isIncidentSeverity(item.severity) ||
+    !isIncidentStatus(item.status)
+  ) {
+    return null;
+  }
+
+  return {
+    id: typeof item.id === "string" ? item.id : undefined,
+    title: item.title,
+    area: item.area,
+    severity: item.severity,
+    owner: item.owner,
+    status: item.status,
+    version:
+      typeof item.version === "number" &&
+      Number.isInteger(item.version) &&
+      item.version >= 1
+        ? item.version
+        : undefined,
+    updatedAt:
+      typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+  } as VersionedIncidentItem;
+}
+
+function sortIncidents<TValue extends IncidentItem>(items: TValue[]) {
+  return [...items].sort((left, right) => {
+    const bySeverity = left.severity.localeCompare(right.severity);
+    return bySeverity === 0 ? left.title.localeCompare(right.title) : bySeverity;
+  });
+}
+
+function readStoredIncidents() {
+  if (typeof window === "undefined") {
+    return cloneCollection(INCIDENTS) as VersionedIncidentItem[];
+  }
+
+  const raw = window.localStorage.getItem(INCIDENTS_STORAGE_KEY);
+
+  if (!raw) {
+    return cloneCollection(INCIDENTS) as VersionedIncidentItem[];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return cloneCollection(INCIDENTS) as VersionedIncidentItem[];
+    }
+
+    return parsed
+      .map((item) => normalizeIncidentItem(item))
+      .filter((item): item is VersionedIncidentItem => item !== null);
+  } catch {
+    return cloneCollection(INCIDENTS) as VersionedIncidentItem[];
+  }
+}
+
+function writeStoredIncidents(incidents: VersionedIncidentItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const serializedIncidents = JSON.stringify(sortIncidents(incidents));
+
+  if (window.localStorage.getItem(INCIDENTS_STORAGE_KEY) === serializedIncidents) {
+    return;
+  }
+
+  window.localStorage.setItem(INCIDENTS_STORAGE_KEY, serializedIncidents);
+  dispatchErpDataEvent();
+}
+
+function upsertStoredIncident(incident: VersionedIncidentItem) {
+  const current = readStoredIncidents();
+
+  writeStoredIncidents([
+    incident,
+    ...current.filter((item) =>
+      incident.id ? item.id !== incident.id : item.title !== incident.title,
+    ),
+  ]);
+}
+
+function removeStoredIncident(incidentId: string) {
+  writeStoredIncidents(
+    readStoredIncidents().filter((item) => item.id !== incidentId),
+  );
+}
+
+function getIncidentResponseItems(
+  payload: IncidentsListResponse | IncidentMutationResponse | null,
+) {
+  return payload && "items" in payload ? payload.items : undefined;
+}
+
+function getIncidentResponseItem(
+  payload: IncidentsListResponse | IncidentMutationResponse | null,
+) {
+  return payload && "incident" in payload ? payload.incident : undefined;
+}
+
+function stripIncidentVersion<
+  TValue extends VersionedIncidentItem | Partial<VersionedIncidentItem>,
+>(incident: TValue) {
+  const payload = { ...incident };
+  delete payload.version;
+  delete payload.updatedAt;
+  return payload;
+}
+
+async function parseIncidentApiPayload(
+  response: Response,
+  fallbackMessage: string,
+) {
+  const payload = (await response.json().catch(() => null)) as
+    | IncidentsListResponse
+    | IncidentMutationResponse
+    | null;
+
+  if (response.ok) {
+    return payload;
+  }
+
+  const currentVersion =
+    payload && "currentVersion" in payload ? payload.currentVersion : undefined;
+
+  if (
+    payload &&
+    payload.error === "VERSION_CONFLICT" &&
+    typeof currentVersion === "number"
+  ) {
+    throw new IncidentVersionConflictError(currentVersion);
+  }
+
+  const message =
+    payload && typeof payload.error === "string"
+      ? payload.error
+      : fallbackMessage;
+
+  throw new IncidentRequestError(message, response.status);
+}
+
+async function fetchIncidentsFromServer() {
+  const response = await fetch(INCIDENTS_ENDPOINT, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const payload = await parseIncidentApiPayload(
+    response,
+    "Nao foi possivel carregar os incidentes.",
+  );
+  const items = getIncidentResponseItems(payload);
+
+  if (!Array.isArray(items)) {
+    throw new IncidentRequestError(
+      "Resposta invalida ao carregar os incidentes.",
+      response.status,
+    );
+  }
+
+  const incidents = items
+    .map((item) => normalizeIncidentItem(item))
+    .filter((item): item is VersionedIncidentItem => item !== null);
+
+  writeStoredIncidents(incidents);
+  return incidents;
+}
+
+function syncIncidentsFromServerInBackground() {
+  if (typeof window === "undefined") {
+    return Promise.resolve(
+      cloneCollection(INCIDENTS) as VersionedIncidentItem[],
+    );
+  }
+
+  if (!incidentsSyncPromise) {
+    const nextSync = fetchIncidentsFromServer().finally(() => {
+      if (incidentsSyncPromise === nextSync) {
+        incidentsSyncPromise = null;
+      }
+    });
+    incidentsSyncPromise = nextSync;
+  }
+
+  return incidentsSyncPromise;
+}
+
+export async function refreshIncidents() {
+  if (typeof window === "undefined") {
+    return cloneCollection(INCIDENTS) as VersionedIncidentItem[];
+  }
+
+  return syncIncidentsFromServerInBackground();
+}
+
+export async function createIncident(incident: IncidentItem) {
+  const response = await fetch(INCIDENTS_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      incident: stripIncidentVersion(incident),
+    }),
+  });
+  const payload = await parseIncidentApiPayload(
+    response,
+    "Nao foi possivel criar o incidente.",
+  );
+  const createdIncident = normalizeIncidentItem(
+    getIncidentResponseItem(payload),
+  );
+
+  if (!createdIncident) {
+    throw new IncidentRequestError(
+      "Resposta invalida ao criar o incidente.",
+      response.status,
+    );
+  }
+
+  upsertStoredIncident(createdIncident);
+  return createdIncident;
+}
+
+export async function updateIncident(
+  incidentId: string,
+  incidentPatch: Partial<IncidentItem>,
+  baseVersion: number,
+) {
+  try {
+    const response = await fetch(
+      `${INCIDENTS_ENDPOINT}/${encodeURIComponent(incidentId)}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          incident: stripIncidentVersion(incidentPatch),
+          baseVersion,
+        }),
+      },
+    );
+    const payload = await parseIncidentApiPayload(
+      response,
+      "Nao foi possivel atualizar o incidente.",
+    );
+    const updatedIncident = normalizeIncidentItem(
+      getIncidentResponseItem(payload),
+    );
+
+    if (!updatedIncident) {
+      throw new IncidentRequestError(
+        "Resposta invalida ao atualizar o incidente.",
+        response.status,
+      );
+    }
+
+    upsertStoredIncident(updatedIncident);
+    return updatedIncident;
+  } catch (error) {
+    if (error instanceof IncidentVersionConflictError) {
+      await refreshIncidents();
+    }
+
+    throw error;
+  }
+}
+
+export async function deleteIncident(
+  incidentId: string,
+  baseVersion: number,
+) {
+  try {
+    const response = await fetch(
+      `${INCIDENTS_ENDPOINT}/${encodeURIComponent(incidentId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          baseVersion,
+        }),
+      },
+    );
+
+    await parseIncidentApiPayload(
+      response,
+      "Nao foi possivel excluir o incidente.",
+    );
+    removeStoredIncident(incidentId);
+  } catch (error) {
+    if (error instanceof IncidentVersionConflictError) {
+      await refreshIncidents();
+    }
+
+    throw error;
+  }
+}
+
+function isPendingPriority(value: unknown): value is PendingItem["priority"] {
+  return PENDING_ITEMS.some((item) => item.priority === value);
+}
+
+function normalizePendingItem(value: unknown): VersionedPendingItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+
+  if (
+    typeof item.title !== "string" ||
+    typeof item.owner !== "string" ||
+    typeof item.area !== "string" ||
+    typeof item.due !== "string" ||
+    !isPendingPriority(item.priority)
+  ) {
+    return null;
+  }
+
+  return {
+    id: typeof item.id === "string" ? item.id : undefined,
+    title: item.title,
+    owner: item.owner,
+    area: item.area,
+    due: item.due,
+    priority: item.priority,
+    version:
+      typeof item.version === "number" &&
+      Number.isInteger(item.version) &&
+      item.version >= 1
+        ? item.version
+        : undefined,
+    updatedAt:
+      typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+  } as VersionedPendingItem;
+}
+
+function sortPendingItems<TValue extends PendingItem>(items: TValue[]) {
+  return [...items].sort((left, right) => {
+    const byPriority = left.priority.localeCompare(right.priority);
+    return byPriority === 0 ? left.title.localeCompare(right.title) : byPriority;
+  });
+}
+
+function readStoredPendingItems() {
+  if (typeof window === "undefined") {
+    return cloneCollection(PENDING_ITEMS) as VersionedPendingItem[];
+  }
+
+  const raw = window.localStorage.getItem(PENDING_ITEMS_STORAGE_KEY);
+
+  if (!raw) {
+    return cloneCollection(PENDING_ITEMS) as VersionedPendingItem[];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return cloneCollection(PENDING_ITEMS) as VersionedPendingItem[];
+    }
+
+    return parsed
+      .map((item) => normalizePendingItem(item))
+      .filter((item): item is VersionedPendingItem => item !== null);
+  } catch {
+    return cloneCollection(PENDING_ITEMS) as VersionedPendingItem[];
+  }
+}
+
+function writeStoredPendingItems(items: VersionedPendingItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const serializedItems = JSON.stringify(sortPendingItems(items));
+
+  if (window.localStorage.getItem(PENDING_ITEMS_STORAGE_KEY) === serializedItems) {
+    return;
+  }
+
+  window.localStorage.setItem(PENDING_ITEMS_STORAGE_KEY, serializedItems);
+  dispatchErpDataEvent();
+}
+
+function upsertStoredPendingItem(item: VersionedPendingItem) {
+  const current = readStoredPendingItems();
+
+  writeStoredPendingItems([
+    item,
+    ...current.filter((currentItem) =>
+      item.id ? currentItem.id !== item.id : currentItem.title !== item.title,
+    ),
+  ]);
+}
+
+function removeStoredPendingItem(pendingId: string) {
+  writeStoredPendingItems(
+    readStoredPendingItems().filter((item) => item.id !== pendingId),
+  );
+}
+
+function getPendingResponseItems(
+  payload: PendingItemsListResponse | PendingItemMutationResponse | null,
+) {
+  return payload && "items" in payload ? payload.items : undefined;
+}
+
+function getPendingResponseItem(
+  payload: PendingItemsListResponse | PendingItemMutationResponse | null,
+) {
+  return payload && "item" in payload ? payload.item : undefined;
+}
+
+function stripPendingVersion<
+  TValue extends VersionedPendingItem | Partial<VersionedPendingItem>,
+>(item: TValue) {
+  const payload = { ...item };
+  delete payload.version;
+  delete payload.updatedAt;
+  return payload;
+}
+
+async function parsePendingApiPayload(
+  response: Response,
+  fallbackMessage: string,
+) {
+  const payload = (await response.json().catch(() => null)) as
+    | PendingItemsListResponse
+    | PendingItemMutationResponse
+    | null;
+
+  if (response.ok) {
+    return payload;
+  }
+
+  const currentVersion =
+    payload && "currentVersion" in payload ? payload.currentVersion : undefined;
+
+  if (
+    payload &&
+    payload.error === "VERSION_CONFLICT" &&
+    typeof currentVersion === "number"
+  ) {
+    throw new PendingItemVersionConflictError(currentVersion);
+  }
+
+  const message =
+    payload && typeof payload.error === "string"
+      ? payload.error
+      : fallbackMessage;
+
+  throw new PendingItemRequestError(message, response.status);
+}
+
+async function fetchPendingItemsFromServer() {
+  const response = await fetch(PENDING_ENDPOINT, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const payload = await parsePendingApiPayload(
+    response,
+    "Nao foi possivel carregar as pendencias.",
+  );
+  const items = getPendingResponseItems(payload);
+
+  if (!Array.isArray(items)) {
+    throw new PendingItemRequestError(
+      "Resposta invalida ao carregar as pendencias.",
+      response.status,
+    );
+  }
+
+  const pendingItems = items
+    .map((item) => normalizePendingItem(item))
+    .filter((item): item is VersionedPendingItem => item !== null);
+
+  writeStoredPendingItems(pendingItems);
+  return pendingItems;
+}
+
+function syncPendingItemsFromServerInBackground() {
+  if (typeof window === "undefined") {
+    return Promise.resolve(
+      cloneCollection(PENDING_ITEMS) as VersionedPendingItem[],
+    );
+  }
+
+  if (!pendingItemsSyncPromise) {
+    const nextSync = fetchPendingItemsFromServer().finally(() => {
+      if (pendingItemsSyncPromise === nextSync) {
+        pendingItemsSyncPromise = null;
+      }
+    });
+    pendingItemsSyncPromise = nextSync;
+  }
+
+  return pendingItemsSyncPromise;
+}
+
+export async function refreshPendingItems() {
+  if (typeof window === "undefined") {
+    return cloneCollection(PENDING_ITEMS) as VersionedPendingItem[];
+  }
+
+  return syncPendingItemsFromServerInBackground();
+}
+
+export async function createPendingItem(item: PendingItem) {
+  const response = await fetch(PENDING_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      item: stripPendingVersion(item),
+    }),
+  });
+  const payload = await parsePendingApiPayload(
+    response,
+    "Nao foi possivel criar a pendencia.",
+  );
+  const createdItem = normalizePendingItem(getPendingResponseItem(payload));
+
+  if (!createdItem) {
+    throw new PendingItemRequestError(
+      "Resposta invalida ao criar a pendencia.",
+      response.status,
+    );
+  }
+
+  upsertStoredPendingItem(createdItem);
+  return createdItem;
+}
+
+export async function updatePendingItem(
+  pendingId: string,
+  itemPatch: Partial<PendingItem>,
+  baseVersion: number,
+) {
+  try {
+    const response = await fetch(
+      `${PENDING_ENDPOINT}/${encodeURIComponent(pendingId)}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          item: stripPendingVersion(itemPatch),
+          baseVersion,
+        }),
+      },
+    );
+    const payload = await parsePendingApiPayload(
+      response,
+      "Nao foi possivel atualizar a pendencia.",
+    );
+    const updatedItem = normalizePendingItem(getPendingResponseItem(payload));
+
+    if (!updatedItem) {
+      throw new PendingItemRequestError(
+        "Resposta invalida ao atualizar a pendencia.",
+        response.status,
+      );
+    }
+
+    upsertStoredPendingItem(updatedItem);
+    return updatedItem;
+  } catch (error) {
+    if (error instanceof PendingItemVersionConflictError) {
+      await refreshPendingItems();
+    }
+
+    throw error;
+  }
+}
+
+export async function deletePendingItem(
+  pendingId: string,
+  baseVersion: number,
+) {
+  try {
+    const response = await fetch(
+      `${PENDING_ENDPOINT}/${encodeURIComponent(pendingId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          baseVersion,
+        }),
+      },
+    );
+
+    await parsePendingApiPayload(
+      response,
+      "Nao foi possivel excluir a pendencia.",
+    );
+    removeStoredPendingItem(pendingId);
+  } catch (error) {
+    if (error instanceof PendingItemVersionConflictError) {
+      await refreshPendingItems();
+    }
+
+    throw error;
+  }
+}
+
+function isTaskStatus(value: unknown): value is TaskItem["status"] {
+  return TASKS.some((item) => item.status === value);
+}
+
+function normalizeTaskItem(value: unknown): VersionedTaskItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+
+  if (
+    typeof item.title !== "string" ||
+    typeof item.shift !== "string" ||
+    typeof item.owner !== "string" ||
+    typeof item.checklist !== "number" ||
+    !Number.isFinite(item.checklist) ||
+    typeof item.completed !== "number" ||
+    !Number.isFinite(item.completed) ||
+    !isTaskStatus(item.status)
+  ) {
+    return null;
+  }
+
+  return {
+    id: typeof item.id === "string" ? item.id : undefined,
+    title: item.title,
+    shift: item.shift,
+    owner: item.owner,
+    checklist: item.checklist,
+    completed: item.completed,
+    status: item.status,
+    version:
+      typeof item.version === "number" &&
+      Number.isInteger(item.version) &&
+      item.version >= 1
+        ? item.version
+        : undefined,
+    updatedAt:
+      typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+  } as VersionedTaskItem;
+}
+
+function sortTasks<TValue extends TaskItem>(items: TValue[]) {
+  return [...items].sort((left, right) => {
+    const byShift = left.shift.localeCompare(right.shift);
+    return byShift === 0 ? left.title.localeCompare(right.title) : byShift;
+  });
+}
+
+function readStoredTasks() {
+  if (typeof window === "undefined") {
+    return cloneCollection(TASKS) as VersionedTaskItem[];
+  }
+
+  const raw = window.localStorage.getItem(TASKS_STORAGE_KEY);
+
+  if (!raw) {
+    return cloneCollection(TASKS) as VersionedTaskItem[];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return cloneCollection(TASKS) as VersionedTaskItem[];
+    }
+
+    return parsed
+      .map((item) => normalizeTaskItem(item))
+      .filter((item): item is VersionedTaskItem => item !== null);
+  } catch {
+    return cloneCollection(TASKS) as VersionedTaskItem[];
+  }
+}
+
+function writeStoredTasks(tasks: VersionedTaskItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const serializedTasks = JSON.stringify(sortTasks(tasks));
+
+  if (window.localStorage.getItem(TASKS_STORAGE_KEY) === serializedTasks) {
+    return;
+  }
+
+  window.localStorage.setItem(TASKS_STORAGE_KEY, serializedTasks);
+  dispatchErpDataEvent();
+}
+
+function upsertStoredTask(task: VersionedTaskItem) {
+  const current = readStoredTasks();
+
+  writeStoredTasks([
+    task,
+    ...current.filter((item) =>
+      task.id ? item.id !== task.id : item.title !== task.title,
+    ),
+  ]);
+}
+
+function removeStoredTask(taskId: string) {
+  writeStoredTasks(readStoredTasks().filter((item) => item.id !== taskId));
+}
+
+function getTaskResponseItems(
+  payload: TasksListResponse | TaskMutationResponse | null,
+) {
+  return payload && "items" in payload ? payload.items : undefined;
+}
+
+function getTaskResponseItem(
+  payload: TasksListResponse | TaskMutationResponse | null,
+) {
+  return payload && "task" in payload ? payload.task : undefined;
+}
+
+function stripTaskVersion<
+  TValue extends VersionedTaskItem | Partial<VersionedTaskItem>,
+>(task: TValue) {
+  const payload = { ...task };
+  delete payload.version;
+  delete payload.updatedAt;
+  return payload;
+}
+
+async function parseTaskApiPayload(
+  response: Response,
+  fallbackMessage: string,
+) {
+  const payload = (await response.json().catch(() => null)) as
+    | TasksListResponse
+    | TaskMutationResponse
+    | null;
+
+  if (response.ok) {
+    return payload;
+  }
+
+  const currentVersion =
+    payload && "currentVersion" in payload ? payload.currentVersion : undefined;
+
+  if (
+    payload &&
+    payload.error === "VERSION_CONFLICT" &&
+    typeof currentVersion === "number"
+  ) {
+    throw new TaskVersionConflictError(currentVersion);
+  }
+
+  const message =
+    payload && typeof payload.error === "string"
+      ? payload.error
+      : fallbackMessage;
+
+  throw new TaskRequestError(message, response.status);
+}
+
+async function fetchTasksFromServer() {
+  const response = await fetch(TASKS_ENDPOINT, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const payload = await parseTaskApiPayload(
+    response,
+    "Nao foi possivel carregar as tarefas.",
+  );
+  const items = getTaskResponseItems(payload);
+
+  if (!Array.isArray(items)) {
+    throw new TaskRequestError(
+      "Resposta invalida ao carregar as tarefas.",
+      response.status,
+    );
+  }
+
+  const tasks = items
+    .map((item) => normalizeTaskItem(item))
+    .filter((item): item is VersionedTaskItem => item !== null);
+
+  writeStoredTasks(tasks);
+  return tasks;
+}
+
+function syncTasksFromServerInBackground() {
+  if (typeof window === "undefined") {
+    return Promise.resolve(cloneCollection(TASKS) as VersionedTaskItem[]);
+  }
+
+  if (!tasksSyncPromise) {
+    const nextSync = fetchTasksFromServer().finally(() => {
+      if (tasksSyncPromise === nextSync) {
+        tasksSyncPromise = null;
+      }
+    });
+    tasksSyncPromise = nextSync;
+  }
+
+  return tasksSyncPromise;
+}
+
+export async function refreshTasks() {
+  if (typeof window === "undefined") {
+    return cloneCollection(TASKS) as VersionedTaskItem[];
+  }
+
+  return syncTasksFromServerInBackground();
+}
+
+export async function createTask(task: TaskItem) {
+  const response = await fetch(TASKS_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      task: stripTaskVersion(task),
+    }),
+  });
+  const payload = await parseTaskApiPayload(
+    response,
+    "Nao foi possivel criar a tarefa.",
+  );
+  const createdTask = normalizeTaskItem(getTaskResponseItem(payload));
+
+  if (!createdTask) {
+    throw new TaskRequestError(
+      "Resposta invalida ao criar a tarefa.",
+      response.status,
+    );
+  }
+
+  upsertStoredTask(createdTask);
+  return createdTask;
+}
+
+export async function updateTask(
+  taskId: string,
+  taskPatch: Partial<TaskItem>,
+  baseVersion: number,
+) {
+  try {
+    const response = await fetch(
+      `${TASKS_ENDPOINT}/${encodeURIComponent(taskId)}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          task: stripTaskVersion(taskPatch),
+          baseVersion,
+        }),
+      },
+    );
+    const payload = await parseTaskApiPayload(
+      response,
+      "Nao foi possivel atualizar a tarefa.",
+    );
+    const updatedTask = normalizeTaskItem(getTaskResponseItem(payload));
+
+    if (!updatedTask) {
+      throw new TaskRequestError(
+        "Resposta invalida ao atualizar a tarefa.",
+        response.status,
+      );
+    }
+
+    upsertStoredTask(updatedTask);
+    return updatedTask;
+  } catch (error) {
+    if (error instanceof TaskVersionConflictError) {
+      await refreshTasks();
+    }
+
+    throw error;
+  }
+}
+
+export async function deleteTask(taskId: string, baseVersion: number) {
+  try {
+    const response = await fetch(
+      `${TASKS_ENDPOINT}/${encodeURIComponent(taskId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          baseVersion,
+        }),
+      },
+    );
+
+    await parseTaskApiPayload(response, "Nao foi possivel excluir a tarefa.");
+    removeStoredTask(taskId);
+  } catch (error) {
+    if (error instanceof TaskVersionConflictError) {
+      await refreshTasks();
+    }
+
+    throw error;
+  }
+}
+
+function normalizeDocumentItem(value: unknown): VersionedDocumentItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+
+  if (
+    typeof item.title !== "string" ||
+    typeof item.type !== "string" ||
+    typeof item.area !== "string" ||
+    typeof item.updatedAt !== "string" ||
+    typeof item.owner !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    id: typeof item.id === "string" ? item.id : undefined,
+    title: item.title,
+    type: item.type,
+    area: item.area,
+    updatedAt: item.updatedAt,
+    owner: item.owner,
+    version:
+      typeof item.version === "number" &&
+      Number.isInteger(item.version) &&
+      item.version >= 1
+        ? item.version
+        : undefined,
+    versionUpdatedAt:
+      typeof item.versionUpdatedAt === "string"
+        ? item.versionUpdatedAt
+        : undefined,
+  } as VersionedDocumentItem;
+}
+
+function sortDocuments<TValue extends DocumentItem>(items: TValue[]) {
+  return [...items].sort((left, right) => {
+    const byType = left.type.localeCompare(right.type);
+    return byType === 0 ? left.title.localeCompare(right.title) : byType;
+  });
+}
+
+function readStoredDocuments() {
+  if (typeof window === "undefined") {
+    return cloneCollection(DOCUMENTS) as VersionedDocumentItem[];
+  }
+
+  const raw = window.localStorage.getItem(DOCUMENTS_STORAGE_KEY);
+
+  if (!raw) {
+    return cloneCollection(DOCUMENTS) as VersionedDocumentItem[];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return cloneCollection(DOCUMENTS) as VersionedDocumentItem[];
+    }
+
+    return parsed
+      .map((item) => normalizeDocumentItem(item))
+      .filter((item): item is VersionedDocumentItem => item !== null);
+  } catch {
+    return cloneCollection(DOCUMENTS) as VersionedDocumentItem[];
+  }
+}
+
+function writeStoredDocuments(documents: VersionedDocumentItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const serializedDocuments = JSON.stringify(sortDocuments(documents));
+
+  if (window.localStorage.getItem(DOCUMENTS_STORAGE_KEY) === serializedDocuments) {
+    return;
+  }
+
+  window.localStorage.setItem(DOCUMENTS_STORAGE_KEY, serializedDocuments);
+  dispatchErpDataEvent();
+}
+
+function upsertStoredDocument(document: VersionedDocumentItem) {
+  const current = readStoredDocuments();
+
+  writeStoredDocuments([
+    document,
+    ...current.filter((item) =>
+      document.id ? item.id !== document.id : item.title !== document.title,
+    ),
+  ]);
+}
+
+function removeStoredDocument(documentId: string) {
+  writeStoredDocuments(
+    readStoredDocuments().filter((item) => item.id !== documentId),
+  );
+}
+
+function getDocumentResponseItems(
+  payload: DocumentsListResponse | DocumentMutationResponse | null,
+) {
+  return payload && "items" in payload ? payload.items : undefined;
+}
+
+function getDocumentResponseItem(
+  payload: DocumentsListResponse | DocumentMutationResponse | null,
+) {
+  return payload && "document" in payload ? payload.document : undefined;
+}
+
+function stripDocumentVersion<
+  TValue extends VersionedDocumentItem | Partial<VersionedDocumentItem>,
+>(document: TValue) {
+  const payload = { ...document };
+  delete payload.version;
+  delete payload.versionUpdatedAt;
+  return payload;
+}
+
+async function parseDocumentApiPayload(
+  response: Response,
+  fallbackMessage: string,
+) {
+  const payload = (await response.json().catch(() => null)) as
+    | DocumentsListResponse
+    | DocumentMutationResponse
+    | null;
+
+  if (response.ok) {
+    return payload;
+  }
+
+  const currentVersion =
+    payload && "currentVersion" in payload ? payload.currentVersion : undefined;
+
+  if (
+    payload &&
+    payload.error === "VERSION_CONFLICT" &&
+    typeof currentVersion === "number"
+  ) {
+    throw new DocumentVersionConflictError(currentVersion);
+  }
+
+  const message =
+    payload && typeof payload.error === "string"
+      ? payload.error
+      : fallbackMessage;
+
+  throw new DocumentRequestError(message, response.status);
+}
+
+async function fetchDocumentsFromServer() {
+  const response = await fetch(DOCUMENTS_ENDPOINT, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const payload = await parseDocumentApiPayload(
+    response,
+    "Nao foi possivel carregar os documentos.",
+  );
+  const items = getDocumentResponseItems(payload);
+
+  if (!Array.isArray(items)) {
+    throw new DocumentRequestError(
+      "Resposta invalida ao carregar os documentos.",
+      response.status,
+    );
+  }
+
+  const documents = items
+    .map((item) => normalizeDocumentItem(item))
+    .filter((item): item is VersionedDocumentItem => item !== null);
+
+  writeStoredDocuments(documents);
+  return documents;
+}
+
+function syncDocumentsFromServerInBackground() {
+  if (typeof window === "undefined") {
+    return Promise.resolve(cloneCollection(DOCUMENTS) as VersionedDocumentItem[]);
+  }
+
+  if (!documentsSyncPromise) {
+    const nextSync = fetchDocumentsFromServer().finally(() => {
+      if (documentsSyncPromise === nextSync) {
+        documentsSyncPromise = null;
+      }
+    });
+    documentsSyncPromise = nextSync;
+  }
+
+  return documentsSyncPromise;
+}
+
+export async function refreshDocuments() {
+  if (typeof window === "undefined") {
+    return cloneCollection(DOCUMENTS) as VersionedDocumentItem[];
+  }
+
+  return syncDocumentsFromServerInBackground();
+}
+
+export async function createDocument(document: DocumentItem) {
+  const response = await fetch(DOCUMENTS_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      document: stripDocumentVersion(document),
+    }),
+  });
+  const payload = await parseDocumentApiPayload(
+    response,
+    "Nao foi possivel criar o documento.",
+  );
+  const createdDocument = normalizeDocumentItem(
+    getDocumentResponseItem(payload),
+  );
+
+  if (!createdDocument) {
+    throw new DocumentRequestError(
+      "Resposta invalida ao criar o documento.",
+      response.status,
+    );
+  }
+
+  upsertStoredDocument(createdDocument);
+  return createdDocument;
+}
+
+export async function updateDocument(
+  documentId: string,
+  documentPatch: Partial<DocumentItem>,
+  baseVersion: number,
+) {
+  try {
+    const response = await fetch(
+      `${DOCUMENTS_ENDPOINT}/${encodeURIComponent(documentId)}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          document: stripDocumentVersion(documentPatch),
+          baseVersion,
+        }),
+      },
+    );
+    const payload = await parseDocumentApiPayload(
+      response,
+      "Nao foi possivel atualizar o documento.",
+    );
+    const updatedDocument = normalizeDocumentItem(
+      getDocumentResponseItem(payload),
+    );
+
+    if (!updatedDocument) {
+      throw new DocumentRequestError(
+        "Resposta invalida ao atualizar o documento.",
+        response.status,
+      );
+    }
+
+    upsertStoredDocument(updatedDocument);
+    return updatedDocument;
+  } catch (error) {
+    if (error instanceof DocumentVersionConflictError) {
+      await refreshDocuments();
+    }
+
+    throw error;
+  }
+}
+
+export async function deleteDocument(
+  documentId: string,
+  baseVersion: number,
+) {
+  try {
+    const response = await fetch(
+      `${DOCUMENTS_ENDPOINT}/${encodeURIComponent(documentId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          baseVersion,
+        }),
+      },
+    );
+
+    await parseDocumentApiPayload(
+      response,
+      "Nao foi possivel excluir o documento.",
+    );
+    removeStoredDocument(documentId);
+  } catch (error) {
+    if (error instanceof DocumentVersionConflictError) {
+      await refreshDocuments();
+    }
+
+    throw error;
+  }
 }
 
 function normalizeProductSku(value: string) {
@@ -257,10 +2024,13 @@ function writeStoredProducts(products: VersionedProductLineItem[]) {
     return;
   }
 
-  window.localStorage.setItem(
-    PRODUCT_LINES_STORAGE_KEY,
-    JSON.stringify(sortProducts(products)),
-  );
+  const serializedProducts = JSON.stringify(sortProducts(products));
+
+  if (window.localStorage.getItem(PRODUCT_LINES_STORAGE_KEY) === serializedProducts) {
+    return;
+  }
+
+  window.localStorage.setItem(PRODUCT_LINES_STORAGE_KEY, serializedProducts);
   dispatchErpDataEvent();
 }
 
@@ -572,10 +2342,13 @@ function writeStoredLots(lots: VersionedLotItem[]) {
     return;
   }
 
-  window.localStorage.setItem(
-    LOTS_STORAGE_KEY,
-    JSON.stringify(sortLots(lots)),
-  );
+  const serializedLots = JSON.stringify(sortLots(lots));
+
+  if (window.localStorage.getItem(LOTS_STORAGE_KEY) === serializedLots) {
+    return;
+  }
+
+  window.localStorage.setItem(LOTS_STORAGE_KEY, serializedLots);
   dispatchErpDataEvent();
 }
 
@@ -814,11 +2587,12 @@ export function saveNotifications(items: NotificationItem[]) {
 }
 
 export function loadQualityEvents() {
-  return loadCollection<QualityEventItem>(QUALITY_EVENTS_STORAGE_KEY, QUALITY_EVENTS, "operations.quality-events");
-}
+  if (typeof window === "undefined") {
+    return cloneCollection(QUALITY_EVENTS) as VersionedQualityEventItem[];
+  }
 
-export function saveQualityEvents(items: QualityEventItem[]) {
-  saveCollection(QUALITY_EVENTS_STORAGE_KEY, items, "operations.quality-events");
+  void syncQualityEventsFromServerInBackground();
+  return readStoredQualityEvents();
 }
 
 export function loadPlanningItems() {
@@ -838,19 +2612,21 @@ export function saveReports(items: ReportItem[]) {
 }
 
 export function loadPendingItems() {
-  return loadCollection<PendingItem>(PENDING_ITEMS_STORAGE_KEY, PENDING_ITEMS, "operations.pending");
-}
+  if (typeof window === "undefined") {
+    return cloneCollection(PENDING_ITEMS) as VersionedPendingItem[];
+  }
 
-export function savePendingItems(items: PendingItem[]) {
-  saveCollection(PENDING_ITEMS_STORAGE_KEY, items, "operations.pending");
+  void syncPendingItemsFromServerInBackground();
+  return readStoredPendingItems();
 }
 
 export function loadTasks() {
-  return loadCollection<TaskItem>(TASKS_STORAGE_KEY, TASKS, "operations.tasks");
-}
+  if (typeof window === "undefined") {
+    return cloneCollection(TASKS) as VersionedTaskItem[];
+  }
 
-export function saveTasks(items: TaskItem[]) {
-  saveCollection(TASKS_STORAGE_KEY, items, "operations.tasks");
+  void syncTasksFromServerInBackground();
+  return readStoredTasks();
 }
 
 export function loadDistributors() {
@@ -862,19 +2638,21 @@ export function saveDistributors(items: DistributorItem[]) {
 }
 
 export function loadIncidents() {
-  return loadCollection<IncidentItem>(INCIDENTS_STORAGE_KEY, INCIDENTS, "operations.incidents");
-}
+  if (typeof window === "undefined") {
+    return cloneCollection(INCIDENTS) as VersionedIncidentItem[];
+  }
 
-export function saveIncidents(items: IncidentItem[]) {
-  saveCollection(INCIDENTS_STORAGE_KEY, items, "operations.incidents");
+  void syncIncidentsFromServerInBackground();
+  return readStoredIncidents();
 }
 
 export function loadDocuments() {
-  return loadCollection<DocumentItem>(DOCUMENTS_STORAGE_KEY, DOCUMENTS, "operations.documents");
-}
+  if (typeof window === "undefined") {
+    return cloneCollection(DOCUMENTS) as VersionedDocumentItem[];
+  }
 
-export function saveDocuments(items: DocumentItem[]) {
-  saveCollection(DOCUMENTS_STORAGE_KEY, items, "operations.documents");
+  void syncDocumentsFromServerInBackground();
+  return readStoredDocuments();
 }
 
 export function loadCalendarEvents() {

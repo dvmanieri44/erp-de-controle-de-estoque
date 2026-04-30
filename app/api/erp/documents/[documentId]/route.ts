@@ -8,7 +8,6 @@ import {
 import { writeAuditLog } from "@/lib/server/audit-log";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
-  createInUseErrorHandler,
   createPayloadErrorHandler,
   createStatusMessageErrorHandler,
   getErpApiErrorResponse,
@@ -16,47 +15,41 @@ import {
   readJsonObjectBody,
 } from "@/lib/server/erp-api-errors";
 import {
-  deleteLocation,
-  getInventoryLocationVersionConflictPayload,
-  getLocationById,
-  InventoryLocationConflictError,
-  InventoryLocationInUseError,
-  InventoryLocationNotFoundError,
-  requireInventoryLocationBaseVersion,
-  updateLocation,
-} from "@/lib/server/inventory-locations";
+  deleteDocument,
+  DocumentConflictError,
+  DocumentNotFoundError,
+  getDocumentById,
+  getDocumentVersionConflictPayload,
+  requireDocumentBaseVersion,
+  updateDocument,
+} from "@/lib/server/documents";
 import { getRequestMetadata } from "@/lib/server/request-metadata";
 
 export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
-    locationId: string;
+    documentId: string;
   }>;
 };
 
-const LOCATIONS_RESOURCE_ID = "inventory.locations";
+const DOCUMENTS_RESOURCE_ID = "operations.documents";
 
-function getLocationTarget(locationId: string) {
+function getDocumentTarget(documentId: string) {
   return {
     accountId: null,
-    resource: `${LOCATIONS_RESOURCE_ID}:${locationId}`,
+    resource: `${DOCUMENTS_RESOURCE_ID}:${documentId}`,
   };
 }
 
-const getLocationNotFoundResponse = createStatusMessageErrorHandler(
-  (error): error is InventoryLocationNotFoundError =>
-    error instanceof InventoryLocationNotFoundError,
+const getDocumentNotFoundResponse = createStatusMessageErrorHandler(
+  (error): error is DocumentNotFoundError =>
+    error instanceof DocumentNotFoundError,
 );
-const getLocationConflictResponse = createPayloadErrorHandler(
-  (error): error is InventoryLocationConflictError =>
-    error instanceof InventoryLocationConflictError,
-  getInventoryLocationVersionConflictPayload,
-);
-const getLocationInUseResponse = createInUseErrorHandler(
-  (error): error is InventoryLocationInUseError =>
-    error instanceof InventoryLocationInUseError,
-  "LOCATION_IN_USE",
+const getDocumentConflictResponse = createPayloadErrorHandler(
+  (error): error is DocumentConflictError =>
+    error instanceof DocumentConflictError,
+  getDocumentVersionConflictPayload,
 );
 
 export async function GET(_: Request, context: RouteContext) {
@@ -67,14 +60,14 @@ export async function GET(_: Request, context: RouteContext) {
   }
 
   try {
-    const { locationId } = await context.params;
-    assertCanReadErpResource(session, LOCATIONS_RESOURCE_ID);
-    const location = await getLocationById(locationId);
-    return NextResponse.json({ location });
+    const { documentId } = await context.params;
+    assertCanReadErpResource(session, DOCUMENTS_RESOURCE_ID);
+    const document = await getDocumentById(documentId);
+    return NextResponse.json({ document });
   } catch (error) {
     return getErpApiErrorResponse(error, {
-      fallbackErrorMessage: "Falha ao carregar a localizacao.",
-      handlers: [getLocationNotFoundResponse],
+      fallbackErrorMessage: "Falha ao carregar o documento.",
+      handlers: [getDocumentNotFoundResponse],
     });
   }
 }
@@ -87,52 +80,50 @@ export async function PUT(request: Request, context: RouteContext) {
     return getUnauthorizedErpResponse();
   }
 
-  const { locationId } = await context.params;
+  const { documentId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanWriteErpResource(session, DOCUMENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const baseVersion = requireInventoryLocationBaseVersion(
+    const baseVersion = requireDocumentBaseVersion(
       body.baseVersion,
       "atualizar",
     );
-    const location = await updateLocation(
-      locationId,
-      body.location,
-      { baseVersion },
-    );
+    const document = await updateDocument(documentId, body.document, {
+      baseVersion,
+    });
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.updated",
+      action: "erp.document.updated",
       outcome: "success",
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getDocumentTarget(documentId),
       request: requestMetadata,
       metadata: {
-        version: location.version,
+        version: document.version,
       },
     });
 
-    return NextResponse.json({ location });
+    return NextResponse.json({ document });
   } catch (error) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.updated",
+      action: "erp.document.updated",
       outcome,
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getDocumentTarget(documentId),
       request: requestMetadata,
       metadata: {
         error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -140,9 +131,9 @@ export async function PUT(request: Request, context: RouteContext) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para atualizacao da localizacao.",
-      fallbackErrorMessage: "Falha ao atualizar a localizacao.",
-      handlers: [getLocationNotFoundResponse, getLocationConflictResponse],
+      syntaxErrorMessage: "JSON invalido para atualizacao do documento.",
+      fallbackErrorMessage: "Falha ao atualizar o documento.",
+      handlers: [getDocumentNotFoundResponse, getDocumentConflictResponse],
     });
   }
 }
@@ -155,38 +146,38 @@ export async function DELETE(request: Request, context: RouteContext) {
     return getUnauthorizedErpResponse();
   }
 
-  const { locationId } = await context.params;
+  const { documentId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanWriteErpResource(session, DOCUMENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const baseVersion = requireInventoryLocationBaseVersion(
+    const baseVersion = requireDocumentBaseVersion(
       body.baseVersion,
       "excluir",
     );
-    const deletedLocation = await deleteLocation(locationId, baseVersion);
+    const deletedDocument = await deleteDocument(documentId, baseVersion);
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.deleted",
+      action: "erp.document.deleted",
       outcome: "success",
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getDocumentTarget(documentId),
       request: requestMetadata,
       metadata: {
-        version: deletedLocation.version,
-        deletedAt: deletedLocation.deletedAt,
+        version: deletedDocument.version,
+        deletedAt: deletedDocument.deletedAt,
       },
     });
 
     return NextResponse.json({
-      locationId: deletedLocation.id,
-      version: deletedLocation.version,
-      deletedAt: deletedLocation.deletedAt,
+      documentId: deletedDocument.id,
+      version: deletedDocument.version,
+      deletedAt: deletedDocument.deletedAt,
     });
   } catch (error) {
     const outcome =
@@ -194,14 +185,14 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.deleted",
+      action: "erp.document.deleted",
       outcome,
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getDocumentTarget(documentId),
       request: requestMetadata,
       metadata: {
         error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -209,13 +200,9 @@ export async function DELETE(request: Request, context: RouteContext) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para exclusao da localizacao.",
-      fallbackErrorMessage: "Falha ao excluir a localizacao.",
-      handlers: [
-        getLocationNotFoundResponse,
-        getLocationConflictResponse,
-        getLocationInUseResponse,
-      ],
+      syntaxErrorMessage: "JSON invalido para exclusao do documento.",
+      fallbackErrorMessage: "Falha ao excluir o documento.",
+      handlers: [getDocumentNotFoundResponse, getDocumentConflictResponse],
     });
   }
 }

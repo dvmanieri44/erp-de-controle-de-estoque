@@ -51,8 +51,19 @@ import {
   type LocationItem,
   type MovementItem,
 } from "@/lib/inventory";
+import { useErpMutation } from "@/lib/use-erp-mutation";
 import {
   createProductLine as createProductRecord,
+  createDocument as createDocumentRecord,
+  createIncident as createIncidentRecord,
+  createPendingItem as createPendingItemRecord,
+  createQualityEvent as createQualityEventRecord,
+  createTask as createTaskRecord,
+  deleteDocument as deleteDocumentRecord,
+  deleteIncident as deleteIncidentRecord,
+  deletePendingItem as deletePendingItemRecord,
+  deleteQualityEvent as deleteQualityEventRecord,
+  deleteTask as deleteTaskRecord,
   createLot as createLotRecord,
   loadCalendarEvents,
   loadCategories,
@@ -68,22 +79,139 @@ import {
   loadReports,
   loadSuppliers,
   loadTasks,
+  IncidentRequestError,
+  IncidentVersionConflictError,
+  LotRequestError,
+  DocumentRequestError,
+  DocumentVersionConflictError,
   ProductRequestError,
   ProductVersionConflictError,
+  QualityEventRequestError,
+  QualityEventVersionConflictError,
+  PendingItemRequestError,
+  PendingItemVersionConflictError,
+  TaskRequestError,
+  TaskVersionConflictError,
+  refreshIncidents,
+  refreshDocuments,
+  refreshLots,
+  refreshPendingItems,
+  refreshQualityEvents,
   refreshProductLines,
+  refreshTasks,
   saveCalendarEvents,
   saveCategories,
   saveDistributors,
-  saveDocuments,
-  saveIncidents,
   saveNotifications,
-  savePendingItems,
   savePlanningItems,
-  saveQualityEvents,
   saveReports,
   saveSuppliers,
-  saveTasks,
+  updatePendingItem as updatePendingItemRecord,
+  updateQualityEvent as updateQualityEventRecord,
+  updateDocument as updateDocumentRecord,
+  updateIncident as updateIncidentRecord,
+  updateTask as updateTaskRecord,
+  type VersionedDocumentItem,
+  type VersionedIncidentItem,
+  type VersionedPendingItem,
+  type VersionedQualityEventItem,
+  type VersionedTaskItem,
 } from "@/lib/operations-store";
+
+const PRODUCT_CONFLICT_MESSAGE =
+  "Conflito de versao: os produtos foram alterados por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
+const PRODUCT_CREATE_CONFLICT_MESSAGE =
+  "Nao foi possivel salvar porque houve conflito no cadastro do produto. Recarreguei a lista e nao sobrescrevi nada. Revise o SKU e tente novamente.";
+const LOT_CONFLICT_MESSAGE =
+  "Nao foi possivel salvar porque houve conflito no cadastro do lote. Recarreguei a lista e nao sobrescrevi nada. Revise o codigo do lote e tente novamente.";
+const QUALITY_EVENT_CONFLICT_MESSAGE =
+  "Conflito de versao: este evento de qualidade foi alterado por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
+const INCIDENT_CONFLICT_MESSAGE =
+  "Conflito de versao: este incidente foi alterado por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
+const DOCUMENT_CONFLICT_MESSAGE =
+  "Conflito de versao: este documento foi alterado por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
+const TASK_CONFLICT_MESSAGE =
+  "Conflito de versao: esta tarefa foi alterada por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
+const PENDING_CONFLICT_MESSAGE =
+  "Conflito de versao: esta pendencia foi alterada por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
+
+function isQualityEventMutationConflict(error: unknown) {
+  return (
+    error instanceof QualityEventVersionConflictError ||
+    (error instanceof QualityEventRequestError && error.status === 409)
+  );
+}
+
+function getQualityEventMutationErrorMessage(
+  error: unknown,
+  fallbackMessage: string,
+) {
+  return error instanceof QualityEventRequestError
+    ? error.message
+    : fallbackMessage;
+}
+
+function isIncidentMutationConflict(error: unknown) {
+  return (
+    error instanceof IncidentVersionConflictError ||
+    (error instanceof IncidentRequestError && error.status === 409)
+  );
+}
+
+function getIncidentMutationErrorMessage(
+  error: unknown,
+  fallbackMessage: string,
+) {
+  return error instanceof IncidentRequestError
+    ? error.message
+    : fallbackMessage;
+}
+
+function isDocumentMutationConflict(error: unknown) {
+  return (
+    error instanceof DocumentVersionConflictError ||
+    (error instanceof DocumentRequestError && error.status === 409)
+  );
+}
+
+function getDocumentMutationErrorMessage(
+  error: unknown,
+  fallbackMessage: string,
+) {
+  return error instanceof DocumentRequestError
+    ? error.message
+    : fallbackMessage;
+}
+
+function isPendingMutationConflict(error: unknown) {
+  return (
+    error instanceof PendingItemVersionConflictError ||
+    (error instanceof PendingItemRequestError && error.status === 409)
+  );
+}
+
+function getPendingMutationErrorMessage(
+  error: unknown,
+  fallbackMessage: string,
+) {
+  return error instanceof PendingItemRequestError
+    ? error.message
+    : fallbackMessage;
+}
+
+function isTaskMutationConflict(error: unknown) {
+  return (
+    error instanceof TaskVersionConflictError ||
+    (error instanceof TaskRequestError && error.status === 409)
+  );
+}
+
+function getTaskMutationErrorMessage(
+  error: unknown,
+  fallbackMessage: string,
+) {
+  return error instanceof TaskRequestError ? error.message : fallbackMessage;
+}
 
 function Hero({
   section,
@@ -699,8 +827,8 @@ function ProductsModule({ section }: { section: DashboardSection }) {
         await reloadProductsAfterConflict();
         setError(
           error instanceof ProductVersionConflictError
-            ? "O produto foi alterado por outra sessao. Recarreguei a lista antes de qualquer nova tentativa."
-            : error.message,
+            ? PRODUCT_CONFLICT_MESSAGE
+            : PRODUCT_CREATE_CONFLICT_MESSAGE,
         );
         return;
       }
@@ -934,7 +1062,7 @@ function LegacyLotsModule({ section }: { section: DashboardSection }) {
 }
 
 function LotsModule({ section }: { section: DashboardSection }) {
-  const [lots] = useOperationsCollection(loadLots);
+  const [lots, setLots] = useOperationsCollection(loadLots);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
@@ -957,6 +1085,14 @@ function LotsModule({ section }: { section: DashboardSection }) {
     });
     setError("");
     setIsFormOpen(false);
+  }
+
+  async function reloadLotsAfterConflict() {
+    try {
+      setLots(await refreshLots());
+    } catch {
+      setLots(loadLots());
+    }
   }
 
   async function handleCreateLot() {
@@ -995,6 +1131,12 @@ function LotsModule({ section }: { section: DashboardSection }) {
       });
       resetForm();
     } catch (creationError) {
+      if (creationError instanceof LotRequestError && creationError.status === 409) {
+        await reloadLotsAfterConflict();
+        setError(LOT_CONFLICT_MESSAGE);
+        return;
+      }
+
       setError(
         creationError instanceof Error
           ? creationError.message
@@ -1594,8 +1736,9 @@ function LegacyPlanningModule({ section }: { section: DashboardSection }) {
 function QualityModule({ section }: { section: DashboardSection }) {
   const [events, setEvents] = useOperationsCollection(loadQualityEvents);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [editingEvent, setEditingEvent] = useState<VersionedQualityEventItem | null>(null);
   const [error, setError] = useState("");
+  const qualityEventMutation = useErpMutation();
   const [form, setForm] = useState({
     title: "",
     lot: "",
@@ -1616,29 +1759,75 @@ function QualityModule({ section }: { section: DashboardSection }) {
       owner: "",
       status: QUALITY_EVENTS[0]?.status ?? statusOptions[0],
     });
-    setEditingTitle(null);
+    setEditingEvent(null);
     setError("");
+    qualityEventMutation.resetMutation();
     setIsFormOpen(false);
   }
 
-  function handleEditEvent(item: QualityEventItem) {
-    setForm({ ...item });
-    setEditingTitle(item.title);
+  function handleEditEvent(item: VersionedQualityEventItem) {
+    setForm({
+      title: item.title,
+      lot: item.lot,
+      area: item.area,
+      owner: item.owner,
+      status: item.status,
+    });
+    setEditingEvent(item);
     setError("");
+    qualityEventMutation.resetMutation();
     setIsFormOpen(true);
   }
 
-  function handleDeleteEvent(title: string) {
-    if (!window.confirm(`Excluir o evento de qualidade "${title}"?`)) {
+  async function reloadQualityEventsAfterConflict() {
+    try {
+      setEvents(await refreshQualityEvents());
+    } catch {
+      setEvents(loadQualityEvents());
+    }
+  }
+
+  async function handleDeleteEvent(item: VersionedQualityEventItem) {
+    if (qualityEventMutation.isLoading) {
       return;
     }
 
-    const nextEvents = events.filter((item) => item.title !== title);
-    setEvents(nextEvents);
-    saveQualityEvents(nextEvents);
+    if (!item.id || !item.version) {
+      await reloadQualityEventsAfterConflict();
+      setError("Recarreguei os eventos de qualidade. Tente excluir novamente.");
+      return;
+    }
+
+    if (!window.confirm(`Excluir o evento de qualidade "${item.title}"?`)) {
+      return;
+    }
+
+    const eventId = item.id;
+    const baseVersion = item.version;
+    setError("");
+    await qualityEventMutation.runMutation(
+      () => deleteQualityEventRecord(eventId, baseVersion),
+      {
+        fallbackErrorMessage: "Nao foi possivel excluir o evento de qualidade.",
+        conflictMessage: QUALITY_EVENT_CONFLICT_MESSAGE,
+        successMessage: "Evento de qualidade excluido com sucesso.",
+        isVersionConflict: isQualityEventMutationConflict,
+        reloadOnConflict: reloadQualityEventsAfterConflict,
+        getErrorMessage: getQualityEventMutationErrorMessage,
+        onSuccess: () => {
+          setEvents((currentEvents) =>
+            currentEvents.filter((event) => event.id !== eventId),
+          );
+        },
+      },
+    );
   }
 
-  function handleSaveEvent() {
+  async function handleSaveEvent() {
+    if (qualityEventMutation.isLoading) {
+      return;
+    }
+
     if (!form.title.trim() || !form.lot.trim() || !form.area.trim() || !form.owner.trim()) {
       setError("Preencha titulo, lote, area e responsavel.");
       return;
@@ -1646,14 +1835,18 @@ function QualityModule({ section }: { section: DashboardSection }) {
 
     if (
       events.some(
-        (item) => item.title.toLowerCase() === form.title.trim().toLowerCase() && item.title !== editingTitle,
+        (item) =>
+          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
+          item.lot.toLowerCase() === form.lot.trim().toLowerCase() &&
+          item.id !== editingEvent?.id,
       )
     ) {
-      setError("Ja existe um evento com esse titulo.");
+      setError("Ja existe um evento com esse titulo para esse lote.");
       return;
     }
 
     const nextItem: QualityEventItem = {
+      id: editingEvent?.id,
       title: form.title.trim(),
       lot: form.lot.trim(),
       area: form.area.trim(),
@@ -1661,14 +1854,62 @@ function QualityModule({ section }: { section: DashboardSection }) {
       status: form.status,
     };
 
-    const nextEvents =
-      editingTitle === null
-        ? [nextItem, ...events]
-        : events.map((item) => (item.title === editingTitle ? nextItem : item));
+    setError("");
 
-    setEvents(nextEvents);
-    saveQualityEvents(nextEvents);
-    resetForm();
+    if (editingEvent) {
+      if (!editingEvent.id || !editingEvent.version) {
+        await reloadQualityEventsAfterConflict();
+        setError("Recarreguei os eventos de qualidade. Tente salvar novamente.");
+        return;
+      }
+
+      const eventId = editingEvent.id;
+      const baseVersion = editingEvent.version;
+      await qualityEventMutation.runMutation(
+        () =>
+          updateQualityEventRecord(
+            eventId,
+            nextItem,
+            baseVersion,
+          ),
+        {
+          fallbackErrorMessage: "Nao foi possivel salvar o evento de qualidade.",
+          conflictMessage: QUALITY_EVENT_CONFLICT_MESSAGE,
+          successMessage: "Evento de qualidade atualizado com sucesso.",
+          isVersionConflict: isQualityEventMutationConflict,
+          reloadOnConflict: reloadQualityEventsAfterConflict,
+          getErrorMessage: getQualityEventMutationErrorMessage,
+          onSuccess: (updatedEvent) => {
+            setEvents((currentEvents) =>
+              currentEvents.map((item) =>
+                item.id === updatedEvent.id ? updatedEvent : item,
+              ),
+            );
+            resetForm();
+          },
+        },
+      );
+      return;
+    }
+
+    await qualityEventMutation.runMutation(
+      () => createQualityEventRecord(nextItem),
+      {
+        fallbackErrorMessage: "Nao foi possivel salvar o evento de qualidade.",
+        conflictMessage: QUALITY_EVENT_CONFLICT_MESSAGE,
+        successMessage: "Evento de qualidade criado com sucesso.",
+        isVersionConflict: isQualityEventMutationConflict,
+        reloadOnConflict: reloadQualityEventsAfterConflict,
+        getErrorMessage: getQualityEventMutationErrorMessage,
+        onSuccess: (createdEvent) => {
+          setEvents((currentEvents) => [
+            createdEvent,
+            ...currentEvents.filter((item) => item.id !== createdEvent.id),
+          ]);
+          resetForm();
+        },
+      },
+    );
   }
 
   return (
@@ -1677,10 +1918,10 @@ function QualityModule({ section }: { section: DashboardSection }) {
 
       {isFormOpen ? (
         <InlineFormPanel
-          title={editingTitle ? "Editar evento de qualidade" : "Novo evento de qualidade"}
+          title={editingEvent ? "Editar evento de qualidade" : "Novo evento de qualidade"}
           description="Registre liberacoes, reanalises e desvios com acompanhamento local."
-          error={error}
-          submitLabel={editingTitle ? "Salvar alteracoes" : "Salvar evento"}
+          error={error || qualityEventMutation.error}
+          submitLabel={editingEvent ? "Salvar alteracoes" : "Salvar evento"}
           onSubmit={handleSaveEvent}
           onCancel={resetForm}
         >
@@ -1717,7 +1958,7 @@ function QualityModule({ section }: { section: DashboardSection }) {
       <Panel title="Fila de qualidade" eyebrow="Laboratorio">
         <div className="space-y-4">
           {events.map((event) => (
-            <article key={event.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
+            <article key={event.id ?? `${event.title}:${event.lot}`} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1729,7 +1970,7 @@ function QualityModule({ section }: { section: DashboardSection }) {
                 </div>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => handleEditEvent(event)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                  <button type="button" onClick={() => handleDeleteEvent(event.title)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                  <button type="button" onClick={() => handleDeleteEvent(event)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
                 </div>
               </div>
             </article>
@@ -2451,8 +2692,9 @@ function LegacyDocumentsModule({ section }: { section: DashboardSection }) {
 function PendingModule({ section }: { section: DashboardSection }) {
   const [items, setItems] = useOperationsCollection(loadPendingItems);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<VersionedPendingItem | null>(null);
   const [error, setError] = useState("");
+  const pendingMutation = useErpMutation();
   const priorityOptions = useMemo(() => Array.from(new Set(PENDING_ITEMS.map((item) => item.priority))) as PendingItem["priority"][], []);
   const [form, setForm] = useState({
     title: "",
@@ -2470,32 +2712,78 @@ function PendingModule({ section }: { section: DashboardSection }) {
       due: "",
       priority: PENDING_ITEMS[0]?.priority ?? priorityOptions[0],
     });
-    setEditingTitle(null);
+    setEditingItem(null);
     setError("");
+    pendingMutation.resetMutation();
     setIsFormOpen(false);
   }
 
-  function handleEdit(item: PendingItem) {
+  function handleEdit(item: VersionedPendingItem) {
     setForm({ ...item });
-    setEditingTitle(item.title);
+    setEditingItem(item);
     setError("");
+    pendingMutation.resetMutation();
     setIsFormOpen(true);
   }
 
-  function handleDelete(title: string) {
-    if (!window.confirm(`Excluir a pendencia "${title}"?`)) return;
-    const nextItems = items.filter((item) => item.title !== title);
-    setItems(nextItems);
-    savePendingItems(nextItems);
+  async function reloadPendingItemsAfterConflict() {
+    try {
+      setItems(await refreshPendingItems());
+    } catch {
+      setItems(loadPendingItems());
+    }
   }
 
-  function handleSave() {
+  async function handleDelete(item: VersionedPendingItem) {
+    if (pendingMutation.isLoading) {
+      return;
+    }
+
+    if (!item.id || !item.version) {
+      await reloadPendingItemsAfterConflict();
+      setError("Recarreguei as pendencias. Tente excluir novamente.");
+      return;
+    }
+
+    if (!window.confirm(`Excluir a pendencia "${item.title}"?`)) return;
+
+    const pendingId = item.id;
+    const baseVersion = item.version;
+    setError("");
+    await pendingMutation.runMutation(
+      () => deletePendingItemRecord(pendingId, baseVersion),
+      {
+        fallbackErrorMessage: "Nao foi possivel excluir a pendencia.",
+        conflictMessage: PENDING_CONFLICT_MESSAGE,
+        isVersionConflict: isPendingMutationConflict,
+        reloadOnConflict: reloadPendingItemsAfterConflict,
+        getErrorMessage: getPendingMutationErrorMessage,
+        onSuccess: () => {
+          setItems((currentItems) =>
+            currentItems.filter((currentItem) => currentItem.id !== pendingId),
+          );
+        },
+      },
+    );
+  }
+
+  async function handleSave() {
+    if (pendingMutation.isLoading) {
+      return;
+    }
+
     if (!form.title.trim() || !form.owner.trim() || !form.area.trim() || !form.due.trim()) {
       setError("Preencha titulo, responsavel, area e prazo.");
       return;
     }
 
-    if (items.some((item) => item.title.toLowerCase() === form.title.trim().toLowerCase() && item.title !== editingTitle)) {
+    if (
+      items.some(
+        (item) =>
+          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
+          item.id !== editingItem?.id,
+      )
+    ) {
       setError("Ja existe uma pendencia com esse titulo.");
       return;
     }
@@ -2508,12 +2796,55 @@ function PendingModule({ section }: { section: DashboardSection }) {
       priority: form.priority,
     };
 
-    const nextItems =
-      editingTitle === null ? [nextItem, ...items] : items.map((item) => (item.title === editingTitle ? nextItem : item));
+    setError("");
 
-    setItems(nextItems);
-    savePendingItems(nextItems);
-    resetForm();
+    if (editingItem) {
+      if (!editingItem.id || !editingItem.version) {
+        await reloadPendingItemsAfterConflict();
+        setError("Recarreguei as pendencias. Tente salvar novamente.");
+        return;
+      }
+
+      const pendingId = editingItem.id;
+      const baseVersion = editingItem.version;
+      await pendingMutation.runMutation(
+        () => updatePendingItemRecord(pendingId, nextItem, baseVersion),
+        {
+          fallbackErrorMessage: "Nao foi possivel salvar a pendencia.",
+          conflictMessage: PENDING_CONFLICT_MESSAGE,
+          isVersionConflict: isPendingMutationConflict,
+          reloadOnConflict: reloadPendingItemsAfterConflict,
+          getErrorMessage: getPendingMutationErrorMessage,
+          onSuccess: (updatedItem) => {
+            setItems((currentItems) =>
+              currentItems.map((item) =>
+                item.id === updatedItem.id ? updatedItem : item,
+              ),
+            );
+            resetForm();
+          },
+        },
+      );
+      return;
+    }
+
+    await pendingMutation.runMutation(
+      () => createPendingItemRecord(nextItem),
+      {
+        fallbackErrorMessage: "Nao foi possivel salvar a pendencia.",
+        conflictMessage: PENDING_CONFLICT_MESSAGE,
+        isVersionConflict: isPendingMutationConflict,
+        reloadOnConflict: reloadPendingItemsAfterConflict,
+        getErrorMessage: getPendingMutationErrorMessage,
+        onSuccess: (createdItem) => {
+          setItems((currentItems) => [
+            createdItem,
+            ...currentItems.filter((item) => item.id !== createdItem.id),
+          ]);
+          resetForm();
+        },
+      },
+    );
   }
 
   return (
@@ -2522,10 +2853,10 @@ function PendingModule({ section }: { section: DashboardSection }) {
 
       {isFormOpen ? (
         <InlineFormPanel
-          title={editingTitle ? "Editar pendencia" : "Nova pendencia"}
+          title={editingItem ? "Editar pendencia" : "Nova pendencia"}
           description="Controle os itens que ainda dependem de acao operacional."
-          error={error}
-          submitLabel={editingTitle ? "Salvar alteracoes" : "Salvar pendencia"}
+          error={error || pendingMutation.error}
+          submitLabel={editingItem ? "Salvar alteracoes" : "Salvar pendencia"}
           onSubmit={handleSave}
           onCancel={resetForm}
         >
@@ -2562,7 +2893,7 @@ function PendingModule({ section }: { section: DashboardSection }) {
       <Panel title="Painel de pendencias" eyebrow="Follow-up">
         <div className="space-y-4">
           {items.map((item) => (
-            <article key={item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
+            <article key={item.id ?? item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -2574,7 +2905,7 @@ function PendingModule({ section }: { section: DashboardSection }) {
                 </div>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                  <button type="button" onClick={() => handleDelete(item.title)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                  <button type="button" onClick={() => void handleDelete(item)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
                 </div>
               </div>
             </article>
@@ -2588,8 +2919,9 @@ function PendingModule({ section }: { section: DashboardSection }) {
 function TasksModule({ section }: { section: DashboardSection }) {
   const [tasks, setTasks] = useOperationsCollection(loadTasks);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<VersionedTaskItem | null>(null);
   const [error, setError] = useState("");
+  const taskMutation = useErpMutation();
   const statusOptions = useMemo(() => Array.from(new Set(TASKS.map((item) => item.status))) as TaskItem["status"][], []);
   const waitingStatus = useMemo(() => statusOptions.find((item) => normalizeText(item).includes("aguard")) ?? statusOptions[0], [statusOptions]);
   const runningStatus = useMemo(() => statusOptions.find((item) => normalizeText(item).includes("execu")) ?? statusOptions[0], [statusOptions]);
@@ -2618,12 +2950,13 @@ function TasksModule({ section }: { section: DashboardSection }) {
       completed: "",
       status: TASKS[0]?.status ?? statusOptions[0],
     });
-    setEditingTitle(null);
+    setEditingTask(null);
     setError("");
+    taskMutation.resetMutation();
     setIsFormOpen(false);
   }
 
-  function handleEdit(item: TaskItem) {
+  function handleEdit(item: VersionedTaskItem) {
     setForm({
       title: item.title,
       shift: item.shift,
@@ -2632,30 +2965,96 @@ function TasksModule({ section }: { section: DashboardSection }) {
       completed: String(item.completed),
       status: item.status,
     });
-    setEditingTitle(item.title);
+    setEditingTask(item);
     setError("");
+    taskMutation.resetMutation();
     setIsFormOpen(true);
   }
 
-  function handleDelete(title: string) {
-    if (!window.confirm(`Excluir a tarefa "${title}"?`)) return;
-    const nextTasks = tasks.filter((item) => item.title !== title);
-    setTasks(nextTasks);
-    saveTasks(nextTasks);
+  async function reloadTasksAfterConflict() {
+    try {
+      setTasks(await refreshTasks());
+    } catch {
+      setTasks(loadTasks());
+    }
   }
 
-  function handleAdvance(title: string) {
-    const nextTasks = tasks.map((item) => {
-      if (item.title !== title) return item;
-      const completed = Math.min(item.checklist, item.completed + 1);
-      return { ...item, completed, status: resolveTaskStatus(completed, item.checklist) };
-    });
+  async function handleDelete(item: VersionedTaskItem) {
+    if (taskMutation.isLoading) {
+      return;
+    }
 
-    setTasks(nextTasks);
-    saveTasks(nextTasks);
+    if (!item.id || !item.version) {
+      await reloadTasksAfterConflict();
+      setError("Recarreguei as tarefas. Tente excluir novamente.");
+      return;
+    }
+
+    if (!window.confirm(`Excluir a tarefa "${item.title}"?`)) return;
+
+    const taskId = item.id;
+    const baseVersion = item.version;
+    setError("");
+    await taskMutation.runMutation(
+      () => deleteTaskRecord(taskId, baseVersion),
+      {
+        fallbackErrorMessage: "Nao foi possivel excluir a tarefa.",
+        conflictMessage: TASK_CONFLICT_MESSAGE,
+        isVersionConflict: isTaskMutationConflict,
+        reloadOnConflict: reloadTasksAfterConflict,
+        getErrorMessage: getTaskMutationErrorMessage,
+        onSuccess: () => {
+          setTasks((currentTasks) =>
+            currentTasks.filter((task) => task.id !== taskId),
+          );
+        },
+      },
+    );
   }
 
-  function handleSave() {
+  async function handleAdvance(item: VersionedTaskItem) {
+    if (taskMutation.isLoading) {
+      return;
+    }
+
+    if (!item.id || !item.version) {
+      await reloadTasksAfterConflict();
+      setError("Recarreguei as tarefas. Tente avancar novamente.");
+      return;
+    }
+
+    const completed = Math.min(item.checklist, item.completed + 1);
+    const nextItem: Partial<TaskItem> = {
+      completed,
+      status: resolveTaskStatus(completed, item.checklist),
+    };
+    const taskId = item.id;
+    const baseVersion = item.version;
+    setError("");
+    await taskMutation.runMutation(
+      () => updateTaskRecord(taskId, nextItem, baseVersion),
+      {
+        fallbackErrorMessage: "Nao foi possivel avancar a tarefa.",
+        conflictMessage: TASK_CONFLICT_MESSAGE,
+        isVersionConflict: isTaskMutationConflict,
+        reloadOnConflict: reloadTasksAfterConflict,
+        getErrorMessage: getTaskMutationErrorMessage,
+        onSuccess: (updatedTask) => {
+          setTasks((currentTasks) =>
+            currentTasks.map((task) =>
+              task.id === updatedTask.id ? updatedTask : task,
+            ),
+          );
+        },
+      },
+    );
+  }
+
+  async function handleSave() {
+    if (taskMutation.isLoading) {
+      return;
+    }
+
     const checklist = Number(form.checklist);
     const completedRaw = Number(form.completed);
 
@@ -2674,7 +3073,13 @@ function TasksModule({ section }: { section: DashboardSection }) {
       return;
     }
 
-    if (tasks.some((item) => item.title.toLowerCase() === form.title.trim().toLowerCase() && item.title !== editingTitle)) {
+    if (
+      tasks.some(
+        (item) =>
+          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
+          item.id !== editingTask?.id,
+      )
+    ) {
       setError("Ja existe uma tarefa com esse titulo.");
       return;
     }
@@ -2689,12 +3094,55 @@ function TasksModule({ section }: { section: DashboardSection }) {
       status: resolveTaskStatus(completed, checklist),
     };
 
-    const nextTasks =
-      editingTitle === null ? [nextItem, ...tasks] : tasks.map((item) => (item.title === editingTitle ? nextItem : item));
+    setError("");
 
-    setTasks(nextTasks);
-    saveTasks(nextTasks);
-    resetForm();
+    if (editingTask) {
+      if (!editingTask.id || !editingTask.version) {
+        await reloadTasksAfterConflict();
+        setError("Recarreguei as tarefas. Tente salvar novamente.");
+        return;
+      }
+
+      const taskId = editingTask.id;
+      const baseVersion = editingTask.version;
+      await taskMutation.runMutation(
+        () => updateTaskRecord(taskId, nextItem, baseVersion),
+        {
+          fallbackErrorMessage: "Nao foi possivel salvar a tarefa.",
+          conflictMessage: TASK_CONFLICT_MESSAGE,
+          isVersionConflict: isTaskMutationConflict,
+          reloadOnConflict: reloadTasksAfterConflict,
+          getErrorMessage: getTaskMutationErrorMessage,
+          onSuccess: (updatedTask) => {
+            setTasks((currentTasks) =>
+              currentTasks.map((item) =>
+                item.id === updatedTask.id ? updatedTask : item,
+              ),
+            );
+            resetForm();
+          },
+        },
+      );
+      return;
+    }
+
+    await taskMutation.runMutation(
+      () => createTaskRecord(nextItem),
+      {
+        fallbackErrorMessage: "Nao foi possivel salvar a tarefa.",
+        conflictMessage: TASK_CONFLICT_MESSAGE,
+        isVersionConflict: isTaskMutationConflict,
+        reloadOnConflict: reloadTasksAfterConflict,
+        getErrorMessage: getTaskMutationErrorMessage,
+        onSuccess: (createdTask) => {
+          setTasks((currentTasks) => [
+            createdTask,
+            ...currentTasks.filter((item) => item.id !== createdTask.id),
+          ]);
+          resetForm();
+        },
+      },
+    );
   }
 
   return (
@@ -2703,10 +3151,10 @@ function TasksModule({ section }: { section: DashboardSection }) {
 
       {isFormOpen ? (
         <InlineFormPanel
-          title={editingTitle ? "Editar tarefa" : "Nova tarefa"}
+          title={editingTask ? "Editar tarefa" : "Nova tarefa"}
           description="Organize a rotina por turno e acompanhe o progresso das checklists."
-          error={error}
-          submitLabel={editingTitle ? "Salvar alteracoes" : "Salvar tarefa"}
+          error={error || taskMutation.error}
+          submitLabel={editingTask ? "Salvar alteracoes" : "Salvar tarefa"}
           onSubmit={handleSave}
           onCancel={resetForm}
         >
@@ -2742,7 +3190,7 @@ function TasksModule({ section }: { section: DashboardSection }) {
             const percent = item.checklist > 0 ? (item.completed / item.checklist) * 100 : 0;
 
             return (
-              <article key={item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
+              <article key={item.id ?? item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -2753,9 +3201,9 @@ function TasksModule({ section }: { section: DashboardSection }) {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-medium text-[var(--navy-900)]">{item.completed}/{item.checklist} etapas</p>
-                    <button type="button" onClick={() => handleAdvance(item.title)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Avancar</button>
+                    <button type="button" onClick={() => void handleAdvance(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Avancar</button>
                     <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                    <button type="button" onClick={() => handleDelete(item.title)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                    <button type="button" onClick={() => void handleDelete(item)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
                   </div>
                 </div>
                 <div className="mt-4 h-2.5 rounded-full bg-[var(--panel)]">
@@ -3080,8 +3528,9 @@ function CalendarModule({ section }: { section: DashboardSection }) {
 function IncidentsModule({ section }: { section: DashboardSection }) {
   const [incidents, setIncidents] = useOperationsCollection(loadIncidents);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [editingIncident, setEditingIncident] = useState<VersionedIncidentItem | null>(null);
   const [error, setError] = useState("");
+  const incidentMutation = useErpMutation();
   const severityOptions = useMemo(
     () => Array.from(new Set(INCIDENTS.map((item) => item.severity))) as IncidentItem["severity"][],
     [],
@@ -3110,12 +3559,13 @@ function IncidentsModule({ section }: { section: DashboardSection }) {
       owner: "",
       status: INCIDENTS[0]?.status ?? statusOptions[0],
     });
-    setEditingTitle(null);
+    setEditingIncident(null);
     setError("");
+    incidentMutation.resetMutation();
     setIsFormOpen(false);
   }
 
-  function handleEdit(item: IncidentItem) {
+  function handleEdit(item: VersionedIncidentItem) {
     setForm({
       title: item.title,
       area: item.area,
@@ -3123,36 +3573,109 @@ function IncidentsModule({ section }: { section: DashboardSection }) {
       owner: item.owner,
       status: item.status,
     });
-    setEditingTitle(item.title);
+    setEditingIncident(item);
     setError("");
+    incidentMutation.resetMutation();
     setIsFormOpen(true);
   }
 
-  function handleDelete(title: string) {
-    if (!window.confirm(`Excluir o incidente "${title}"?`)) return;
-    const nextIncidents = incidents.filter((item) => item.title !== title);
-    setIncidents(nextIncidents);
-    saveIncidents(nextIncidents);
+  async function reloadIncidentsAfterConflict() {
+    try {
+      setIncidents(await refreshIncidents());
+    } catch {
+      setIncidents(loadIncidents());
+    }
   }
 
-  function handleClose(title: string) {
-    const nextIncidents = incidents.map((item) => (item.title === title ? { ...item, status: closedStatus } : item));
-    setIncidents(nextIncidents);
-    saveIncidents(nextIncidents);
+  async function handleDelete(item: VersionedIncidentItem) {
+    if (incidentMutation.isLoading) {
+      return;
+    }
+
+    if (!item.id || !item.version) {
+      await reloadIncidentsAfterConflict();
+      setError("Recarreguei os incidentes. Tente excluir novamente.");
+      return;
+    }
+
+    if (!window.confirm(`Excluir o incidente "${item.title}"?`)) return;
+
+    const incidentId = item.id;
+    const baseVersion = item.version;
+    setError("");
+    await incidentMutation.runMutation(
+      () => deleteIncidentRecord(incidentId, baseVersion),
+      {
+        fallbackErrorMessage: "Nao foi possivel excluir o incidente.",
+        conflictMessage: INCIDENT_CONFLICT_MESSAGE,
+        isVersionConflict: isIncidentMutationConflict,
+        reloadOnConflict: reloadIncidentsAfterConflict,
+        getErrorMessage: getIncidentMutationErrorMessage,
+        onSuccess: () => {
+          setIncidents((currentIncidents) =>
+            currentIncidents.filter((incident) => incident.id !== incidentId),
+          );
+        },
+      },
+    );
   }
 
-  function handleSave() {
+  async function handleClose(item: VersionedIncidentItem) {
+    if (incidentMutation.isLoading) {
+      return;
+    }
+
+    if (!item.id || !item.version) {
+      await reloadIncidentsAfterConflict();
+      setError("Recarreguei os incidentes. Tente encerrar novamente.");
+      return;
+    }
+
+    const incidentId = item.id;
+    const baseVersion = item.version;
+    setError("");
+    await incidentMutation.runMutation(
+      () => updateIncidentRecord(incidentId, { status: closedStatus }, baseVersion),
+      {
+        fallbackErrorMessage: "Nao foi possivel encerrar o incidente.",
+        conflictMessage: INCIDENT_CONFLICT_MESSAGE,
+        isVersionConflict: isIncidentMutationConflict,
+        reloadOnConflict: reloadIncidentsAfterConflict,
+        getErrorMessage: getIncidentMutationErrorMessage,
+        onSuccess: (updatedIncident) => {
+          setIncidents((currentIncidents) =>
+            currentIncidents.map((incident) =>
+              incident.id === updatedIncident.id ? updatedIncident : incident,
+            ),
+          );
+        },
+      },
+    );
+  }
+
+  async function handleSave() {
+    if (incidentMutation.isLoading) {
+      return;
+    }
+
     if (!form.title.trim() || !form.area.trim() || !form.owner.trim()) {
       setError("Preencha titulo, area e responsavel.");
       return;
     }
 
-    if (incidents.some((item) => item.title.toLowerCase() === form.title.trim().toLowerCase() && item.title !== editingTitle)) {
+    if (
+      incidents.some(
+        (item) =>
+          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
+          item.id !== editingIncident?.id,
+      )
+    ) {
       setError("Ja existe um incidente com esse titulo.");
       return;
     }
 
     const nextItem: IncidentItem = {
+      id: editingIncident?.id,
       title: form.title.trim(),
       area: form.area.trim(),
       severity: form.severity,
@@ -3160,12 +3683,55 @@ function IncidentsModule({ section }: { section: DashboardSection }) {
       status: form.status,
     };
 
-    const nextIncidents =
-      editingTitle === null ? [nextItem, ...incidents] : incidents.map((item) => (item.title === editingTitle ? nextItem : item));
+    setError("");
 
-    setIncidents(nextIncidents);
-    saveIncidents(nextIncidents);
-    resetForm();
+    if (editingIncident) {
+      if (!editingIncident.id || !editingIncident.version) {
+        await reloadIncidentsAfterConflict();
+        setError("Recarreguei os incidentes. Tente salvar novamente.");
+        return;
+      }
+
+      const incidentId = editingIncident.id;
+      const baseVersion = editingIncident.version;
+      await incidentMutation.runMutation(
+        () => updateIncidentRecord(incidentId, nextItem, baseVersion),
+        {
+          fallbackErrorMessage: "Nao foi possivel salvar o incidente.",
+          conflictMessage: INCIDENT_CONFLICT_MESSAGE,
+          isVersionConflict: isIncidentMutationConflict,
+          reloadOnConflict: reloadIncidentsAfterConflict,
+          getErrorMessage: getIncidentMutationErrorMessage,
+          onSuccess: (updatedIncident) => {
+            setIncidents((currentIncidents) =>
+              currentIncidents.map((item) =>
+                item.id === updatedIncident.id ? updatedIncident : item,
+              ),
+            );
+            resetForm();
+          },
+        },
+      );
+      return;
+    }
+
+    await incidentMutation.runMutation(
+      () => createIncidentRecord(nextItem),
+      {
+        fallbackErrorMessage: "Nao foi possivel salvar o incidente.",
+        conflictMessage: INCIDENT_CONFLICT_MESSAGE,
+        isVersionConflict: isIncidentMutationConflict,
+        reloadOnConflict: reloadIncidentsAfterConflict,
+        getErrorMessage: getIncidentMutationErrorMessage,
+        onSuccess: (createdIncident) => {
+          setIncidents((currentIncidents) => [
+            createdIncident,
+            ...currentIncidents.filter((item) => item.id !== createdIncident.id),
+          ]);
+          resetForm();
+        },
+      },
+    );
   }
 
   return (
@@ -3174,10 +3740,10 @@ function IncidentsModule({ section }: { section: DashboardSection }) {
 
       {isFormOpen ? (
         <InlineFormPanel
-          title={editingTitle ? "Editar incidente" : "Novo incidente"}
+          title={editingIncident ? "Editar incidente" : "Novo incidente"}
           description="Registre ocorrencias, nivel de severidade e o dono da tratativa para a operacao."
-          error={error}
-          submitLabel={editingTitle ? "Salvar alteracoes" : "Salvar incidente"}
+          error={error || incidentMutation.error}
+          submitLabel={editingIncident ? "Salvar alteracoes" : "Salvar incidente"}
           onSubmit={handleSave}
           onCancel={resetForm}
         >
@@ -3218,7 +3784,7 @@ function IncidentsModule({ section }: { section: DashboardSection }) {
       <Panel title="Registro de incidentes" eyebrow="Tratativa">
         <div className="space-y-4">
           {incidents.map((item) => (
-            <article key={item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
+            <article key={item.id ?? item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -3229,9 +3795,9 @@ function IncidentsModule({ section }: { section: DashboardSection }) {
                   <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.area} · Responsavel: {item.owner}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => handleClose(item.title)} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">Encerrar</button>
+                  <button type="button" onClick={() => void handleClose(item)} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">Encerrar</button>
                   <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                  <button type="button" onClick={() => handleDelete(item.title)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                  <button type="button" onClick={() => void handleDelete(item)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
                 </div>
               </div>
             </article>
@@ -3245,8 +3811,9 @@ function IncidentsModule({ section }: { section: DashboardSection }) {
 function DocumentsModule({ section }: { section: DashboardSection }) {
   const [documents, setDocuments] = useOperationsCollection(loadDocuments);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [editingDocument, setEditingDocument] = useState<VersionedDocumentItem | null>(null);
   const [error, setError] = useState("");
+  const documentMutation = useErpMutation();
   const [form, setForm] = useState({
     title: "",
     type: "",
@@ -3263,12 +3830,13 @@ function DocumentsModule({ section }: { section: DashboardSection }) {
       updatedAt: "",
       owner: "",
     });
-    setEditingTitle(null);
+    setEditingDocument(null);
     setError("");
+    documentMutation.resetMutation();
     setIsFormOpen(false);
   }
 
-  function handleEdit(item: DocumentItem) {
+  function handleEdit(item: VersionedDocumentItem) {
     setForm({
       title: item.title,
       type: item.type,
@@ -3276,25 +3844,70 @@ function DocumentsModule({ section }: { section: DashboardSection }) {
       updatedAt: item.updatedAt,
       owner: item.owner,
     });
-    setEditingTitle(item.title);
+    setEditingDocument(item);
     setError("");
+    documentMutation.resetMutation();
     setIsFormOpen(true);
   }
 
-  function handleDelete(title: string) {
-    if (!window.confirm(`Excluir o documento "${title}"?`)) return;
-    const nextDocuments = documents.filter((item) => item.title !== title);
-    setDocuments(nextDocuments);
-    saveDocuments(nextDocuments);
+  async function reloadDocumentsAfterConflict() {
+    try {
+      setDocuments(await refreshDocuments());
+    } catch {
+      setDocuments(loadDocuments());
+    }
   }
 
-  function handleSave() {
+  async function handleDelete(item: VersionedDocumentItem) {
+    if (documentMutation.isLoading) {
+      return;
+    }
+
+    if (!item.id || !item.version) {
+      await reloadDocumentsAfterConflict();
+      setError("Recarreguei os documentos. Tente excluir novamente.");
+      return;
+    }
+
+    if (!window.confirm(`Excluir o documento "${item.title}"?`)) return;
+
+    const documentId = item.id;
+    const baseVersion = item.version;
+    setError("");
+    await documentMutation.runMutation(
+      () => deleteDocumentRecord(documentId, baseVersion),
+      {
+        fallbackErrorMessage: "Nao foi possivel excluir o documento.",
+        conflictMessage: DOCUMENT_CONFLICT_MESSAGE,
+        isVersionConflict: isDocumentMutationConflict,
+        reloadOnConflict: reloadDocumentsAfterConflict,
+        getErrorMessage: getDocumentMutationErrorMessage,
+        onSuccess: () => {
+          setDocuments((currentDocuments) =>
+            currentDocuments.filter((document) => document.id !== documentId),
+          );
+        },
+      },
+    );
+  }
+
+  async function handleSave() {
+    if (documentMutation.isLoading) {
+      return;
+    }
+
     if (!form.title.trim() || !form.type.trim() || !form.area.trim() || !form.owner.trim()) {
       setError("Preencha titulo, tipo, area e responsavel.");
       return;
     }
 
-    if (documents.some((item) => item.title.toLowerCase() === form.title.trim().toLowerCase() && item.title !== editingTitle)) {
+    if (
+      documents.some(
+        (item) =>
+          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
+          item.id !== editingDocument?.id,
+      )
+    ) {
       setError("Ja existe um documento com esse titulo.");
       return;
     }
@@ -3307,12 +3920,55 @@ function DocumentsModule({ section }: { section: DashboardSection }) {
       owner: form.owner.trim(),
     };
 
-    const nextDocuments =
-      editingTitle === null ? [nextItem, ...documents] : documents.map((item) => (item.title === editingTitle ? nextItem : item));
+    setError("");
 
-    setDocuments(nextDocuments);
-    saveDocuments(nextDocuments);
-    resetForm();
+    if (editingDocument) {
+      if (!editingDocument.id || !editingDocument.version) {
+        await reloadDocumentsAfterConflict();
+        setError("Recarreguei os documentos. Tente salvar novamente.");
+        return;
+      }
+
+      const documentId = editingDocument.id;
+      const baseVersion = editingDocument.version;
+      await documentMutation.runMutation(
+        () => updateDocumentRecord(documentId, nextItem, baseVersion),
+        {
+          fallbackErrorMessage: "Nao foi possivel salvar o documento.",
+          conflictMessage: DOCUMENT_CONFLICT_MESSAGE,
+          isVersionConflict: isDocumentMutationConflict,
+          reloadOnConflict: reloadDocumentsAfterConflict,
+          getErrorMessage: getDocumentMutationErrorMessage,
+          onSuccess: (updatedDocument) => {
+            setDocuments((currentDocuments) =>
+              currentDocuments.map((item) =>
+                item.id === updatedDocument.id ? updatedDocument : item,
+              ),
+            );
+            resetForm();
+          },
+        },
+      );
+      return;
+    }
+
+    await documentMutation.runMutation(
+      () => createDocumentRecord(nextItem),
+      {
+        fallbackErrorMessage: "Nao foi possivel salvar o documento.",
+        conflictMessage: DOCUMENT_CONFLICT_MESSAGE,
+        isVersionConflict: isDocumentMutationConflict,
+        reloadOnConflict: reloadDocumentsAfterConflict,
+        getErrorMessage: getDocumentMutationErrorMessage,
+        onSuccess: (createdDocument) => {
+          setDocuments((currentDocuments) => [
+            createdDocument,
+            ...currentDocuments.filter((item) => item.id !== createdDocument.id),
+          ]);
+          resetForm();
+        },
+      },
+    );
   }
 
   return (
@@ -3321,11 +3977,13 @@ function DocumentsModule({ section }: { section: DashboardSection }) {
 
       {isFormOpen ? (
         <InlineFormPanel
-          title={editingTitle ? "Editar documento" : "Novo documento"}
+          title={editingDocument ? "Editar documento" : "Novo documento"}
           description="Cadastre laudos, comprovantes e checklists com ownership claro para a operacao."
-          error={error}
-          submitLabel={editingTitle ? "Salvar alteracoes" : "Salvar documento"}
-          onSubmit={handleSave}
+          error={error || documentMutation.error}
+          submitLabel={editingDocument ? "Salvar alteracoes" : "Salvar documento"}
+          onSubmit={() => {
+            void handleSave();
+          }}
           onCancel={resetForm}
         >
           <div className="grid gap-4 lg:grid-cols-2">
@@ -3356,7 +4014,7 @@ function DocumentsModule({ section }: { section: DashboardSection }) {
 
       <div className="grid gap-4 xl:grid-cols-2">
         {documents.map((item) => (
-          <article key={item.title} className="rounded-[28px] border border-[var(--panel-border)] bg-[var(--panel)] p-6 shadow-[0_10px_24px_var(--shadow-color)]">
+          <article key={item.id ?? item.title} className="rounded-[28px] border border-[var(--panel-border)] bg-[var(--panel)] p-6 shadow-[0_10px_24px_var(--shadow-color)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-xl font-semibold text-[var(--foreground)]">{item.title}</p>
@@ -3364,7 +4022,7 @@ function DocumentsModule({ section }: { section: DashboardSection }) {
               </div>
               <div className="flex gap-2">
                 <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]">Editar</button>
-                <button type="button" onClick={() => handleDelete(item.title)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                <button type="button" onClick={() => { void handleDelete(item); }} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
               </div>
             </div>
             <p className="mt-2 text-sm text-[var(--muted-foreground)]">{item.area}</p>

@@ -918,7 +918,16 @@ function writeStoredLocations(locations: VersionedLocationItem[]) {
     return;
   }
 
-  window.localStorage.setItem(LOCATIONS_STORAGE_KEY, JSON.stringify(locations));
+  const sortedLocations = [...locations].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+  const serializedLocations = JSON.stringify(sortedLocations);
+
+  if (window.localStorage.getItem(LOCATIONS_STORAGE_KEY) === serializedLocations) {
+    return;
+  }
+
+  window.localStorage.setItem(LOCATIONS_STORAGE_KEY, serializedLocations);
   dispatchErpDataEvent();
 }
 
@@ -974,10 +983,13 @@ function writeStoredMovements(movements: VersionedMovementItem[]) {
     return;
   }
 
-  window.localStorage.setItem(
-    MOVEMENTS_STORAGE_KEY,
-    JSON.stringify(sortMovements(movements)),
-  );
+  const serializedMovements = JSON.stringify(sortMovements(movements));
+
+  if (window.localStorage.getItem(MOVEMENTS_STORAGE_KEY) === serializedMovements) {
+    return;
+  }
+
+  window.localStorage.setItem(MOVEMENTS_STORAGE_KEY, serializedMovements);
   dispatchErpDataEvent();
 }
 

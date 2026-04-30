@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ERP_DATA_EVENT } from "@/lib/app-events";
+import type { LotItem, ProductLineItem } from "@/lib/operations-data";
 import {
   DATE_RANGE_OPTIONS,
   INITIAL_LOCATIONS,
@@ -36,7 +37,7 @@ import {
   type VersionedMovementItem,
   updateMovement,
 } from "@/lib/inventory";
-import { loadProductLines } from "@/lib/operations-store";
+import { loadLots, loadProductLines } from "@/lib/operations-store";
 
 type ToastState = {
   id: number;
@@ -50,6 +51,8 @@ type TransferSort = "newest" | "oldest" | "quantity_desc" | "quantity_asc" | "pr
 
 type TransferFormState = {
   product: string;
+  productId: string;
+  lotCode: string;
   quantity: string;
   user: string;
   reason: string;
@@ -64,6 +67,8 @@ type FormErrors = Partial<Record<keyof TransferFormState, string>>;
 
 const EMPTY_FORM: TransferFormState = {
   product: "",
+  productId: "",
+  lotCode: "",
   quantity: "",
   user: "",
   reason: "",
@@ -73,6 +78,97 @@ const EMPTY_FORM: TransferFormState = {
   priority: "media",
   transferStatus: "solicitada",
 };
+
+const TRANSFER_STALE_VERSION_MESSAGE =
+  "Sem versao local confiavel para esta transferencia. Recarreguei a lista e nao salvei nada para evitar sobrescrita. Abra a transferencia novamente e tente outra vez.";
+const TRANSFER_VERSION_CONFLICT_MESSAGE =
+  "Conflito de versao: esta transferencia foi alterada por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
+const PRODUCT_ID_REQUIRED_MESSAGE =
+  "Produto reconhecido no catalogo, mas sem SKU vinculado. Selecione o produto novamente antes de salvar.";
+const LOT_CODE_REQUIRED_MESSAGE =
+  "Lote reconhecido no catalogo, mas sem codigo vinculado. Selecione o lote novamente antes de salvar.";
+const LOT_PRODUCT_MISMATCH_MESSAGE =
+  "O lote selecionado pertence a outro produto. Ajuste produto ou lote antes de salvar.";
+
+function buildProductOptionValue(product: Pick<ProductLineItem, "product" | "sku">) {
+  return `${product.product} (${product.sku})`;
+}
+
+function buildLotOptionValue(lot: Pick<LotItem, "code" | "product">) {
+  return `${lot.code} (${lot.product})`;
+}
+
+function resolveProductSelection(
+  products: readonly ProductLineItem[],
+  value: string,
+) {
+  const normalizedValue = normalizeReferenceText(value);
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return (
+    products.find((product) => {
+      return (
+        normalizeReferenceText(product.sku) === normalizedValue ||
+        normalizeReferenceText(product.product) === normalizedValue ||
+        normalizeReferenceText(buildProductOptionValue(product)) === normalizedValue
+      );
+    }) ??
+    findMatchingProductReference(products, value) ??
+    null
+  );
+}
+
+function resolveLotSelection(lots: readonly LotItem[], value: string) {
+  const normalizedValue = normalizeReferenceText(value);
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return (
+    lots.find((lot) => {
+      return (
+        normalizeReferenceText(lot.code) === normalizedValue ||
+        normalizeReferenceText(buildLotOptionValue(lot)) === normalizedValue
+      );
+    }) ?? null
+  );
+}
+
+function resolveLotProduct(
+  products: readonly ProductLineItem[],
+  lot: LotItem,
+) {
+  if (lot.productId) {
+    const normalizedProductId = normalizeReferenceText(lot.productId);
+    const productBySku = products.find(
+      (product) => normalizeReferenceText(product.sku) === normalizedProductId,
+    );
+
+    if (productBySku) {
+      return productBySku;
+    }
+  }
+
+  return resolveProductSelection(products, lot.product);
+}
+
+function isLotCompatibleWithProduct(
+  lot: LotItem,
+  product: ProductLineItem,
+  products: readonly ProductLineItem[],
+) {
+  const lotProduct = resolveLotProduct(products, lot);
+
+  if (lotProduct) {
+    return normalizeReferenceText(lotProduct.sku) === normalizeReferenceText(product.sku);
+  }
+
+  return normalizeReferenceText(lot.product) === normalizeReferenceText(product.product);
+}
 
 function applyLocationStockDelta(
   balances: Map<string, number>,
@@ -329,6 +425,8 @@ export function TransfersScreen() {
   const [form, setForm] = useState<TransferFormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [toast, setToast] = useState<ToastState>(null);
+  const [productCatalog, setProductCatalog] = useState(() => loadProductLines());
+  const [lotCatalog, setLotCatalog] = useState(() => loadLots());
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
   const fallbackWarningShownRef = useRef(false);
 
@@ -372,6 +470,8 @@ export function TransfersScreen() {
       const nextMovements = loadMovements();
       setLocations(nextLocations);
       setMovements(nextMovements);
+      setProductCatalog(loadProductLines());
+      setLotCatalog(loadLots());
       void syncLocationStock(nextMovements);
     } catch {
       setToast({
@@ -391,6 +491,8 @@ export function TransfersScreen() {
         const nextMovements = loadMovements();
         setLocations(nextLocations);
         setMovements(nextMovements);
+        setProductCatalog(loadProductLines());
+        setLotCatalog(loadLots());
         void syncLocationStock(nextMovements);
       } catch {
         if (!isActive) {
@@ -415,6 +517,8 @@ export function TransfersScreen() {
 
         setLocations(loadLocations());
         setMovements(nextMovements);
+        setProductCatalog(loadProductLines());
+        setLotCatalog(loadLots());
         await syncLocationStock(nextMovements);
       } catch {
         if (!isActive) {
@@ -585,6 +689,28 @@ export function TransfersScreen() {
     candidateMovements?: readonly MovementItem[],
   ) => Math.max(0, location.capacityTotal - getLocationUsedCapacity(location.id, candidateMovements));
 
+  function handleProductChange(value: string) {
+    const matchedProduct = resolveProductSelection(productCatalog, value);
+
+    setForm((current) => ({
+      ...current,
+      product: matchedProduct?.product ?? value,
+      productId: matchedProduct?.sku ?? "",
+    }));
+  }
+
+  function handleLotChange(value: string) {
+    const matchedLot = resolveLotSelection(lotCatalog, value);
+    const matchedProduct = matchedLot ? resolveLotProduct(productCatalog, matchedLot) : null;
+
+    setForm((current) => ({
+      ...current,
+      lotCode: matchedLot?.code ?? value,
+      product: matchedProduct?.product ?? current.product,
+      productId: matchedProduct?.sku ?? current.productId,
+    }));
+  }
+
   function closeModal() {
     setIsModalOpen(false);
     setEditingId(null);
@@ -597,6 +723,8 @@ export function TransfersScreen() {
     setEditingId(transfer?.id ?? null);
     setForm({
       product: transfer?.product ?? "",
+      productId: transfer?.productId ?? "",
+      lotCode: transfer?.lotCode ?? "",
       quantity: transfer ? String(transfer.quantity) : "",
       user: transfer?.user ?? "",
       reason: transfer?.reason ?? "",
@@ -778,15 +906,48 @@ export function TransfersScreen() {
     }
 
     const now = new Date().toISOString();
-    const matchedProduct = findMatchingProductReference(loadProductLines(), form.product);
+    const matchedProduct =
+      (form.productId
+        ? productCatalog.find(
+            (product) =>
+              normalizeReferenceText(product.sku) === normalizeReferenceText(form.productId),
+          ) ?? null
+        : null) ?? resolveProductSelection(productCatalog, form.product);
+    const matchedLot = resolveLotSelection(lotCatalog, form.lotCode);
     const shouldPreserveCurrentProductId =
       !matchedProduct &&
       !!currentTransfer?.productId &&
       normalizeReferenceText(form.product) === normalizeReferenceText(currentTransfer.product);
+    const shouldPreserveCurrentLotCode =
+      !matchedLot &&
+      !!currentTransfer?.lotCode &&
+      normalizeReferenceText(form.lotCode) === normalizeReferenceText(currentTransfer.lotCode);
+    const finalProductId = matchedProduct?.sku ?? (shouldPreserveCurrentProductId ? currentTransfer?.productId : undefined);
+    const finalLotCode = matchedLot?.code ?? (shouldPreserveCurrentLotCode ? currentTransfer?.lotCode : undefined);
+    const identityErrors: FormErrors = {};
+
+    if (matchedProduct && !finalProductId) {
+      identityErrors.product = PRODUCT_ID_REQUIRED_MESSAGE;
+    }
+
+    if (matchedLot && !finalLotCode) {
+      identityErrors.lotCode = LOT_CODE_REQUIRED_MESSAGE;
+    }
+
+    if (matchedLot && matchedProduct && !isLotCompatibleWithProduct(matchedLot, matchedProduct, productCatalog)) {
+      identityErrors.lotCode = LOT_PRODUCT_MISMATCH_MESSAGE;
+    }
+
+    if (Object.keys(identityErrors).length > 0) {
+      setErrors((current) => ({ ...current, ...identityErrors }));
+      return;
+    }
+
     const transfer: VersionedMovementItem = {
       id: editingId ?? `mov-${Date.now()}`,
       product: matchedProduct?.product ?? form.product.trim(),
-      productId: matchedProduct?.sku ?? (shouldPreserveCurrentProductId ? currentTransfer?.productId : undefined),
+      productId: finalProductId,
+      lotCode: finalLotCode,
       type: "transferencia",
       quantity: Number(form.quantity),
       reason: form.reason.trim(),
@@ -810,7 +971,7 @@ export function TransfersScreen() {
       if (editingId) {
         if (typeof currentTransfer?.version !== "number") {
           await reloadMovementsAfterConflict(
-            "A versão desta transferência não está sincronizada. Os dados foram recarregados.",
+            TRANSFER_STALE_VERSION_MESSAGE,
           );
           return;
         }
@@ -844,7 +1005,7 @@ export function TransfersScreen() {
     } catch (error) {
       if (error instanceof MovementVersionConflictError) {
         await reloadMovementsAfterConflict(
-          "A transferência foi alterada por outra sessão. Os dados foram recarregados.",
+          TRANSFER_VERSION_CONFLICT_MESSAGE,
         );
         closeModal();
         return;
@@ -863,6 +1024,8 @@ export function TransfersScreen() {
     setEditingId(null);
     setForm({
       product: transfer.product,
+      productId: transfer.productId ?? "",
+      lotCode: transfer.lotCode ?? "",
       quantity: String(transfer.quantity),
       user: transfer.user,
       reason: transfer.reason,
@@ -896,7 +1059,7 @@ export function TransfersScreen() {
     try {
       if (typeof removed.version !== "number") {
         await reloadMovementsAfterConflict(
-          "A versão desta transferência não está sincronizada. Os dados foram recarregados.",
+          TRANSFER_STALE_VERSION_MESSAGE,
         );
         return;
       }
@@ -929,7 +1092,7 @@ export function TransfersScreen() {
     } catch (error) {
       if (error instanceof MovementVersionConflictError) {
         await reloadMovementsAfterConflict(
-          "A transferência foi alterada por outra sessão. Os dados foram recarregados.",
+          TRANSFER_VERSION_CONFLICT_MESSAGE,
         );
         return;
       }
@@ -960,7 +1123,7 @@ export function TransfersScreen() {
 
     if (typeof transfer.version !== "number") {
       await reloadMovementsAfterConflict(
-        "A versão desta transferência não está sincronizada. Os dados foram recarregados.",
+        TRANSFER_STALE_VERSION_MESSAGE,
       );
       return;
     }
@@ -1000,7 +1163,7 @@ export function TransfersScreen() {
     } catch (error) {
       if (error instanceof MovementVersionConflictError) {
         await reloadMovementsAfterConflict(
-          "A transferência foi alterada por outra sessão. Os dados foram recarregados.",
+          TRANSFER_VERSION_CONFLICT_MESSAGE,
         );
         return;
       }
@@ -1016,7 +1179,7 @@ export function TransfersScreen() {
   async function handleCancelTransfer(transfer: VersionedMovementItem) {
     if (typeof transfer.version !== "number") {
       await reloadMovementsAfterConflict(
-        "A versão desta transferência não está sincronizada. Os dados foram recarregados.",
+        TRANSFER_STALE_VERSION_MESSAGE,
       );
       return;
     }
@@ -1046,7 +1209,7 @@ export function TransfersScreen() {
     } catch (error) {
       if (error instanceof MovementVersionConflictError) {
         await reloadMovementsAfterConflict(
-          "A transferência foi alterada por outra sessão. Os dados foram recarregados.",
+          TRANSFER_VERSION_CONFLICT_MESSAGE,
         );
         return;
       }
@@ -1420,10 +1583,31 @@ export function TransfersScreen() {
                 <input
                   ref={firstFieldRef}
                   value={form.product}
-                  onChange={(event) => setForm((current) => ({ ...current, product: event.target.value }))}
+                  onChange={(event) => handleProductChange(event.target.value)}
+                  list="transfer-product-options"
                   placeholder="Ex.: PremieR Formula Cães Adultos"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
+                <datalist id="transfer-product-options">
+                  {productCatalog.map((product) => (
+                    <option key={product.sku} value={buildProductOptionValue(product)} />
+                  ))}
+                </datalist>
+              </Field>
+
+              <Field label="Lote (opcional)" error={errors.lotCode}>
+                <input
+                  value={form.lotCode}
+                  onChange={(event) => handleLotChange(event.target.value)}
+                  list="transfer-lot-options"
+                  placeholder="Ex.: PFM260327"
+                  className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
+                />
+                <datalist id="transfer-lot-options">
+                  {lotCatalog.map((lot) => (
+                    <option key={lot.code} value={buildLotOptionValue(lot)} />
+                  ))}
+                </datalist>
               </Field>
 
               <Field label="Quantidade" error={errors.quantity}>

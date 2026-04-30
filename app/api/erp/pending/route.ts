@@ -13,15 +13,15 @@ import {
   readJsonObjectBody,
 } from "@/lib/server/erp-api-errors";
 import {
-  createLot,
-  getInventoryLotsPersistenceProvider,
-  listLots,
-} from "@/lib/server/inventory-lots";
+  createPendingItem,
+  getPendingItemsPersistenceProvider,
+  listPendingItems,
+} from "@/lib/server/pending-items";
 import { getRequestMetadata } from "@/lib/server/request-metadata";
 
 export const runtime = "nodejs";
 
-const LOTS_RESOURCE_ID = "operations.lots";
+const PENDING_RESOURCE_ID = "operations.pending";
 
 export async function GET() {
   const session = await readServerSession();
@@ -31,16 +31,16 @@ export async function GET() {
   }
 
   try {
-    assertCanReadErpResource(session, LOTS_RESOURCE_ID);
-    const payload = await listLots();
+    assertCanReadErpResource(session, PENDING_RESOURCE_ID);
+    const payload = await listPendingItems();
 
     return NextResponse.json({
       ...payload,
-      provider: getInventoryLotsPersistenceProvider(),
+      provider: getPendingItemsPersistenceProvider(),
     });
   } catch (error) {
     return getErpApiErrorResponse(error, {
-      fallbackErrorMessage: "Falha ao carregar os lotes.",
+      fallbackErrorMessage: "Falha ao carregar as pendencias.",
     });
   }
 }
@@ -54,13 +54,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    assertCanWriteErpResource(session, LOTS_RESOURCE_ID);
+    assertCanWriteErpResource(session, PENDING_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const lot = await createLot(body.lot);
+    const item = await createPendingItem(body.item);
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.lot.created",
+      action: "erp.pending.created",
       outcome: "success",
       actor: {
         accountId: session.account.id,
@@ -69,22 +69,22 @@ export async function POST(request: Request) {
       },
       target: {
         accountId: null,
-        resource: `${LOTS_RESOURCE_ID}:${lot.code}`,
+        resource: `${PENDING_RESOURCE_ID}:${item.id}`,
       },
       request: requestMetadata,
       metadata: {
-        version: lot.version,
+        version: item.version,
       },
     });
 
-    return NextResponse.json({ lot }, { status: 201 });
+    return NextResponse.json({ item }, { status: 201 });
   } catch (error) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.lot.created",
+      action: "erp.pending.created",
       outcome,
       actor: {
         accountId: session.account.id,
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       },
       target: {
         accountId: null,
-        resource: LOTS_RESOURCE_ID,
+        resource: PENDING_RESOURCE_ID,
       },
       request: requestMetadata,
       metadata: {
@@ -102,8 +102,8 @@ export async function POST(request: Request) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para criacao do lote.",
-      fallbackErrorMessage: "Falha ao criar o lote.",
+      syntaxErrorMessage: "JSON invalido para criacao da pendencia.",
+      fallbackErrorMessage: "Falha ao criar a pendencia.",
     });
   }
 }

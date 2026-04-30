@@ -47,6 +47,11 @@ const COPY = {
     locationNotConfirmed: "Nao confirmado",
     possibleTransitTo: "Possivel transito para",
     locationMismatchWarning: "A localizacao persistida pode divergir do historico recente.",
+    locationMismatchPreview: "Inconsistencias de localizacao",
+    locationMismatchPreviewHelper: "Preview somente leitura comparando cadastro do lote com historico derivado.",
+    locationMismatchPreviewFailed: "Nao foi possivel carregar o preview de inconsistencias agora.",
+    noLocationMismatches: "Nenhuma divergencia de localizacao detectada nos lotes carregados.",
+    readOnlyPreview: "Somente leitura: nenhuma reconciliacao automatica sera aplicada.",
     confidenceLabel: "Confianca",
     confidenceValue: {
       high: "Alta",
@@ -102,6 +107,11 @@ const COPY = {
     locationNotConfirmed: "Not confirmed",
     possibleTransitTo: "Possibly in transit to",
     locationMismatchWarning: "The persisted location may diverge from recent history.",
+    locationMismatchPreview: "Location inconsistencies",
+    locationMismatchPreviewHelper: "Read-only preview comparing the lot record with derived history.",
+    locationMismatchPreviewFailed: "Could not load the inconsistency preview right now.",
+    noLocationMismatches: "No location mismatch detected in the loaded lots.",
+    readOnlyPreview: "Read-only: no automatic reconciliation will be applied.",
     confidenceLabel: "Confidence",
     confidenceValue: {
       high: "High",
@@ -157,6 +167,11 @@ const COPY = {
     locationNotConfirmed: "No confirmado",
     possibleTransitTo: "Posible transito hacia",
     locationMismatchWarning: "La ubicacion persistida puede divergir del historial reciente.",
+    locationMismatchPreview: "Inconsistencias de ubicacion",
+    locationMismatchPreviewHelper: "Preview solo lectura comparando el cadastro del lote con el historial derivado.",
+    locationMismatchPreviewFailed: "No fue posible cargar el preview de inconsistencias ahora.",
+    noLocationMismatches: "Ninguna divergencia de ubicacion detectada en los lotes cargados.",
+    readOnlyPreview: "Solo lectura: ninguna reconciliacion automatica sera aplicada.",
     confidenceLabel: "Confianza",
     confidenceValue: {
       high: "Alta",
@@ -318,6 +333,21 @@ function isDocumentRelatedToLot(document: DocumentItem, lot: LotItem) {
   return documentText.includes(lotCode) || documentText.includes(lotProduct);
 }
 
+function getDerivedLocationLabel(
+  derivedLocation: LotDerivedLocationItem,
+  locations: LocationItem[],
+  fallback: string,
+) {
+  if (derivedLocation.confidence === "low" || !derivedLocation.stableLocationId) {
+    return fallback;
+  }
+
+  return (
+    getLocationName(locations, derivedLocation.stableLocationId) ??
+    derivedLocation.stableLocationId
+  );
+}
+
 export function TraceabilityScreen({ section }: { section: DashboardSection }) {
   const { locale } = useLocale();
   const copy = COPY[locale];
@@ -331,6 +361,8 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
   const [documents, setDocuments] = useState<DocumentItem[]>(() => loadDocuments());
   const [derivedLotLocation, setDerivedLotLocation] = useState<LotDerivedLocationItem | null>(null);
   const [derivedLotLocationFailed, setDerivedLotLocationFailed] = useState(false);
+  const [derivedLocationsByLot, setDerivedLocationsByLot] = useState<Record<string, LotDerivedLocationItem>>({});
+  const [derivedLocationsPreviewFailed, setDerivedLocationsPreviewFailed] = useState(false);
 
   useEffect(() => {
     const sync = () => {
@@ -410,7 +442,77 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
     [lots],
   );
 
+  const mismatchedLots = useMemo(
+    () =>
+      lots
+        .map((lot) => ({
+          lot,
+          derivedLocation: derivedLocationsByLot[lot.code],
+        }))
+        .filter(
+          (
+            item,
+          ): item is {
+            lot: LotItem;
+            derivedLocation: LotDerivedLocationItem;
+          } => Boolean(item.derivedLocation?.mismatch),
+        ),
+    [derivedLocationsByLot, lots],
+  );
+
   const latestMovement = relatedMovements[0] ?? null;
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (lots.length === 0) {
+      setDerivedLocationsByLot({});
+      setDerivedLocationsPreviewFailed(false);
+      return () => {
+        isActive = false;
+      };
+    }
+
+    Promise.allSettled(
+      lots.map((lot) =>
+        fetchLotDerivedLocation(lot.code).then((payload) => ({
+          lotCode: lot.code,
+          payload,
+        })),
+      ),
+    )
+      .then((results) => {
+        if (!isActive) {
+          return;
+        }
+
+        const nextDerivedLocations: Record<string, LotDerivedLocationItem> = {};
+        let hasFailure = false;
+
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            nextDerivedLocations[result.value.lotCode] = result.value.payload;
+          } else {
+            hasFailure = true;
+          }
+        }
+
+        setDerivedLocationsByLot(nextDerivedLocations);
+        setDerivedLocationsPreviewFailed(hasFailure);
+      })
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setDerivedLocationsByLot({});
+        setDerivedLocationsPreviewFailed(true);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [lots, movements]);
 
   useEffect(() => {
     let isActive = true;
@@ -482,6 +584,81 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
         <SectionCard title={copy.qualityEvents} value={String(qualityEvents.length)} helper={copy.qualityEventsHelper} />
         <SectionCard title={copy.evidence} value={String(documents.length)} helper={copy.evidenceHelper} />
       </div>
+
+      <Panel
+        eyebrow={copy.derivedLocation}
+        title={copy.locationMismatchPreview}
+        description={copy.locationMismatchPreviewHelper}
+      >
+        <div className="space-y-3">
+          <p className="rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs font-medium text-amber-800">
+            {copy.readOnlyPreview}
+          </p>
+
+          {derivedLocationsPreviewFailed ? (
+            <div className="rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-soft)] px-4 py-4 text-sm text-[var(--muted-foreground)]">
+              {copy.locationMismatchPreviewFailed}
+            </div>
+          ) : null}
+
+          {mismatchedLots.length > 0 ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {mismatchedLots.map(({ lot, derivedLocation }) => {
+                const derivedLocationName = getDerivedLocationLabel(
+                  derivedLocation,
+                  locations,
+                  copy.locationNotConfirmed,
+                );
+                const inTransitLocationName = derivedLocation.inTransitToLocationId
+                  ? getLocationName(locations, derivedLocation.inTransitToLocationId) ??
+                    derivedLocation.inTransitToLocationId
+                  : null;
+
+                return (
+                  <button
+                    key={lot.code}
+                    type="button"
+                    onClick={() => setSelectedLotCode(lot.code)}
+                    className="rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-4 text-left transition hover:border-amber-300 hover:bg-amber-50"
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--foreground)]">{lot.code}</p>
+                        <p className="mt-1 text-xs text-[var(--muted-foreground)]">{lot.product}</p>
+                      </div>
+                      <StatusPill
+                        label={copy.confidenceValue[derivedLocation.confidence]}
+                        tone="bg-amber-100 text-amber-700"
+                      />
+                    </div>
+
+                    <div className="mt-4 grid gap-3 text-xs text-[var(--muted-foreground)] md:grid-cols-2">
+                      <div>
+                        <p className="font-semibold text-[var(--foreground)]">{copy.currentLocation}</p>
+                        <p className="mt-1">{lot.location || copy.unknownLocation}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-[var(--foreground)]">{copy.derivedLocation}</p>
+                        <p className="mt-1">{derivedLocationName}</p>
+                      </div>
+                    </div>
+
+                    {inTransitLocationName ? (
+                      <p className="mt-3 text-xs text-amber-700">
+                        {copy.possibleTransitTo} {inTransitLocationName}
+                      </p>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-soft)] px-4 py-4 text-sm text-[var(--muted-foreground)]">
+              {copy.noLocationMismatches}
+            </div>
+          )}
+        </div>
+      </Panel>
 
       <div className="grid gap-6 xl:grid-cols-[0.78fr_1.22fr]">
         <Panel

@@ -73,6 +73,7 @@ export type NotificationItem = {
 };
 
 export type PendingItem = {
+  id?: string;
   title: string;
   owner: string;
   area: string;
@@ -81,6 +82,7 @@ export type PendingItem = {
 };
 
 export type TaskItem = {
+  id?: string;
   title: string;
   shift: string;
   owner: string;
@@ -99,6 +101,7 @@ export type DistributorItem = {
 };
 
 export type IncidentItem = {
+  id?: string;
   title: string;
   area: string;
   severity: "Alta" | "Média" | "Baixa";
@@ -107,6 +110,7 @@ export type IncidentItem = {
 };
 
 export type DocumentItem = {
+  id?: string;
   title: string;
   type: string;
   area: string;

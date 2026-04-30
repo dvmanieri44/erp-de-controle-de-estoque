@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ERP_DATA_EVENT } from "@/lib/app-events";
+import type { LotItem, ProductLineItem } from "@/lib/operations-data";
 import {
   DATE_RANGE_OPTIONS,
   INITIAL_LOCATIONS,
@@ -38,7 +39,7 @@ import {
   type VersionedMovementItem,
   updateMovement,
 } from "@/lib/inventory";
-import { loadProductLines } from "@/lib/operations-store";
+import { loadLots, loadProductLines } from "@/lib/operations-store";
 
 type ToastState = {
   id: number;
@@ -54,6 +55,8 @@ type MovementSort = "newest" | "oldest" | "quantity_desc" | "quantity_asc" | "ty
 
 type MovementFormState = {
   product: string;
+  productId: string;
+  lotCode: string;
   type: MovementType;
   quantity: string;
   reason: string;
@@ -71,6 +74,8 @@ type FormErrors = Partial<Record<keyof MovementFormState, string>>;
 
 const EMPTY_FORM: MovementFormState = {
   product: "",
+  productId: "",
+  lotCode: "",
   type: "entrada",
   quantity: "",
   reason: "",
@@ -83,6 +88,97 @@ const EMPTY_FORM: MovementFormState = {
   transferStatus: "recebida",
   priority: "media",
 };
+
+const MOVEMENT_STALE_VERSION_MESSAGE =
+  "Sem versao local confiavel para esta movimentacao. Recarreguei a lista e nao salvei nada para evitar sobrescrita. Abra a movimentacao novamente e tente outra vez.";
+const MOVEMENT_VERSION_CONFLICT_MESSAGE =
+  "Conflito de versao: esta movimentacao foi alterada por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
+const PRODUCT_ID_REQUIRED_MESSAGE =
+  "Produto reconhecido no catalogo, mas sem SKU vinculado. Selecione o produto novamente antes de salvar.";
+const LOT_CODE_REQUIRED_MESSAGE =
+  "Lote reconhecido no catalogo, mas sem codigo vinculado. Selecione o lote novamente antes de salvar.";
+const LOT_PRODUCT_MISMATCH_MESSAGE =
+  "O lote selecionado pertence a outro produto. Ajuste produto ou lote antes de salvar.";
+
+function buildProductOptionValue(product: Pick<ProductLineItem, "product" | "sku">) {
+  return `${product.product} (${product.sku})`;
+}
+
+function buildLotOptionValue(lot: Pick<LotItem, "code" | "product">) {
+  return `${lot.code} (${lot.product})`;
+}
+
+function resolveProductSelection(
+  products: readonly ProductLineItem[],
+  value: string,
+) {
+  const normalizedValue = normalizeReferenceText(value);
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return (
+    products.find((product) => {
+      return (
+        normalizeReferenceText(product.sku) === normalizedValue ||
+        normalizeReferenceText(product.product) === normalizedValue ||
+        normalizeReferenceText(buildProductOptionValue(product)) === normalizedValue
+      );
+    }) ??
+    findMatchingProductReference(products, value) ??
+    null
+  );
+}
+
+function resolveLotSelection(lots: readonly LotItem[], value: string) {
+  const normalizedValue = normalizeReferenceText(value);
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return (
+    lots.find((lot) => {
+      return (
+        normalizeReferenceText(lot.code) === normalizedValue ||
+        normalizeReferenceText(buildLotOptionValue(lot)) === normalizedValue
+      );
+    }) ?? null
+  );
+}
+
+function resolveLotProduct(
+  products: readonly ProductLineItem[],
+  lot: LotItem,
+) {
+  if (lot.productId) {
+    const normalizedProductId = normalizeReferenceText(lot.productId);
+    const productBySku = products.find(
+      (product) => normalizeReferenceText(product.sku) === normalizedProductId,
+    );
+
+    if (productBySku) {
+      return productBySku;
+    }
+  }
+
+  return resolveProductSelection(products, lot.product);
+}
+
+function isLotCompatibleWithProduct(
+  lot: LotItem,
+  product: ProductLineItem,
+  products: readonly ProductLineItem[],
+) {
+  const lotProduct = resolveLotProduct(products, lot);
+
+  if (lotProduct) {
+    return normalizeReferenceText(lotProduct.sku) === normalizeReferenceText(product.sku);
+  }
+
+  return normalizeReferenceText(lot.product) === normalizeReferenceText(product.product);
+}
 
 function applyLocationStockDelta(
   balances: Map<string, number>,
@@ -485,6 +581,8 @@ export function MovementsScreen() {
   const [form, setForm] = useState<MovementFormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [toast, setToast] = useState<ToastState>(null);
+  const [productCatalog, setProductCatalog] = useState(() => loadProductLines());
+  const [lotCatalog, setLotCatalog] = useState(() => loadLots());
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
   const fallbackWarningShownRef = useRef(false);
 
@@ -528,6 +626,8 @@ export function MovementsScreen() {
       const nextMovements = loadMovements();
       setLocations(nextLocations);
       setMovements(nextMovements);
+      setProductCatalog(loadProductLines());
+      setLotCatalog(loadLots());
       void syncLocationStock(nextMovements);
     } catch {
       setToast({
@@ -547,6 +647,8 @@ export function MovementsScreen() {
         const nextMovements = loadMovements();
         setLocations(nextLocations);
         setMovements(nextMovements);
+        setProductCatalog(loadProductLines());
+        setLotCatalog(loadLots());
         void syncLocationStock(nextMovements);
       } catch {
         if (!isActive) {
@@ -571,6 +673,8 @@ export function MovementsScreen() {
 
         setLocations(loadLocations());
         setMovements(nextMovements);
+        setProductCatalog(loadProductLines());
+        setLotCatalog(loadLots());
         await syncLocationStock(nextMovements);
       } catch {
         if (!isActive) {
@@ -754,6 +858,28 @@ export function MovementsScreen() {
     candidateMovements?: readonly MovementItem[],
   ) => Math.max(0, location.capacityTotal - getLocationUsedCapacity(location.id, candidateMovements));
 
+  function handleProductChange(value: string) {
+    const matchedProduct = resolveProductSelection(productCatalog, value);
+
+    setForm((current) => ({
+      ...current,
+      product: matchedProduct?.product ?? value,
+      productId: matchedProduct?.sku ?? "",
+    }));
+  }
+
+  function handleLotChange(value: string) {
+    const matchedLot = resolveLotSelection(lotCatalog, value);
+    const matchedProduct = matchedLot ? resolveLotProduct(productCatalog, matchedLot) : null;
+
+    setForm((current) => ({
+      ...current,
+      lotCode: matchedLot?.code ?? value,
+      product: matchedProduct?.product ?? current.product,
+      productId: matchedProduct?.sku ?? current.productId,
+    }));
+  }
+
   function closeModal() {
     setIsModalOpen(false);
     setEditingId(null);
@@ -766,6 +892,8 @@ export function MovementsScreen() {
     setEditingId(movement?.id ?? null);
     setForm({
       product: movement?.product ?? "",
+      productId: movement?.productId ?? "",
+      lotCode: movement?.lotCode ?? "",
       type: movement?.type ?? "entrada",
       quantity: movement ? String(movement.quantity) : "",
       reason: movement?.reason ?? "",
@@ -971,16 +1099,48 @@ export function MovementsScreen() {
 
     const now = new Date().toISOString();
     const quantity = Number(form.quantity);
-    const matchedProduct = findMatchingProductReference(loadProductLines(), form.product);
+    const matchedProduct =
+      (form.productId
+        ? productCatalog.find(
+            (product) =>
+              normalizeReferenceText(product.sku) === normalizeReferenceText(form.productId),
+          ) ?? null
+        : null) ?? resolveProductSelection(productCatalog, form.product);
+    const matchedLot = resolveLotSelection(lotCatalog, form.lotCode);
     const shouldPreserveCurrentProductId =
       !matchedProduct &&
       !!currentMovement?.productId &&
       normalizeReferenceText(form.product) === normalizeReferenceText(currentMovement.product);
+    const shouldPreserveCurrentLotCode =
+      !matchedLot &&
+      !!currentMovement?.lotCode &&
+      normalizeReferenceText(form.lotCode) === normalizeReferenceText(currentMovement.lotCode);
+    const finalProductId = matchedProduct?.sku ?? (shouldPreserveCurrentProductId ? currentMovement?.productId : undefined);
+    const finalLotCode = matchedLot?.code ?? (shouldPreserveCurrentLotCode ? currentMovement?.lotCode : undefined);
+    const identityErrors: FormErrors = {};
+
+    if (matchedProduct && !finalProductId) {
+      identityErrors.product = PRODUCT_ID_REQUIRED_MESSAGE;
+    }
+
+    if (matchedLot && !finalLotCode) {
+      identityErrors.lotCode = LOT_CODE_REQUIRED_MESSAGE;
+    }
+
+    if (matchedLot && matchedProduct && !isLotCompatibleWithProduct(matchedLot, matchedProduct, productCatalog)) {
+      identityErrors.lotCode = LOT_PRODUCT_MISMATCH_MESSAGE;
+    }
+
+    if (Object.keys(identityErrors).length > 0) {
+      setErrors((current) => ({ ...current, ...identityErrors }));
+      return;
+    }
 
     const movement: VersionedMovementItem = {
       id: editingId ?? `mov-${Date.now()}`,
       product: matchedProduct?.product ?? form.product.trim(),
-      productId: matchedProduct?.sku ?? (shouldPreserveCurrentProductId ? currentMovement?.productId : undefined),
+      productId: finalProductId,
+      lotCode: finalLotCode,
       type: form.type,
       quantity,
       reason: form.reason.trim(),
@@ -1014,7 +1174,7 @@ export function MovementsScreen() {
       if (editingId) {
         if (typeof currentMovement?.version !== "number") {
           await reloadMovementsAfterConflict(
-            "A versão desta movimentação não está sincronizada. Os dados foram recarregados.",
+            MOVEMENT_STALE_VERSION_MESSAGE,
           );
           return;
         }
@@ -1048,7 +1208,7 @@ export function MovementsScreen() {
     } catch (error) {
       if (error instanceof MovementVersionConflictError) {
         await reloadMovementsAfterConflict(
-          "A movimentação foi alterada por outra sessão. Os dados foram recarregados.",
+          MOVEMENT_VERSION_CONFLICT_MESSAGE,
         );
         closeModal();
         return;
@@ -1073,7 +1233,7 @@ export function MovementsScreen() {
     try {
       if (typeof removed.version !== "number") {
         await reloadMovementsAfterConflict(
-          "A versão desta movimentação não está sincronizada. Os dados foram recarregados.",
+          MOVEMENT_STALE_VERSION_MESSAGE,
         );
         return;
       }
@@ -1106,7 +1266,7 @@ export function MovementsScreen() {
     } catch (error) {
       if (error instanceof MovementVersionConflictError) {
         await reloadMovementsAfterConflict(
-          "A movimentação foi alterada por outra sessão. Os dados foram recarregados.",
+          MOVEMENT_VERSION_CONFLICT_MESSAGE,
         );
         return;
       }
@@ -1359,10 +1519,31 @@ export function MovementsScreen() {
                 <input
                   ref={firstFieldRef}
                   value={form.product}
-                  onChange={(event) => setForm((current) => ({ ...current, product: event.target.value }))}
+                  onChange={(event) => handleProductChange(event.target.value)}
+                  list="movement-product-options"
                   placeholder="Ex.: GoldeN Formula Gatos Castrados"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
+                <datalist id="movement-product-options">
+                  {productCatalog.map((product) => (
+                    <option key={product.sku} value={buildProductOptionValue(product)} />
+                  ))}
+                </datalist>
+              </Field>
+
+              <Field label="Lote (opcional)" error={errors.lotCode}>
+                <input
+                  value={form.lotCode}
+                  onChange={(event) => handleLotChange(event.target.value)}
+                  list="movement-lot-options"
+                  placeholder="Ex.: PFM260327"
+                  className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
+                />
+                <datalist id="movement-lot-options">
+                  {lotCatalog.map((lot) => (
+                    <option key={lot.code} value={buildLotOptionValue(lot)} />
+                  ))}
+                </datalist>
               </Field>
 
               <Field label="Tipo">

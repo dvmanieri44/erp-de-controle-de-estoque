@@ -13,15 +13,15 @@ import {
   readJsonObjectBody,
 } from "@/lib/server/erp-api-errors";
 import {
-  createLot,
-  getInventoryLotsPersistenceProvider,
-  listLots,
-} from "@/lib/server/inventory-lots";
+  createDocument,
+  getDocumentsPersistenceProvider,
+  listDocuments,
+} from "@/lib/server/documents";
 import { getRequestMetadata } from "@/lib/server/request-metadata";
 
 export const runtime = "nodejs";
 
-const LOTS_RESOURCE_ID = "operations.lots";
+const DOCUMENTS_RESOURCE_ID = "operations.documents";
 
 export async function GET() {
   const session = await readServerSession();
@@ -31,16 +31,16 @@ export async function GET() {
   }
 
   try {
-    assertCanReadErpResource(session, LOTS_RESOURCE_ID);
-    const payload = await listLots();
+    assertCanReadErpResource(session, DOCUMENTS_RESOURCE_ID);
+    const payload = await listDocuments();
 
     return NextResponse.json({
       ...payload,
-      provider: getInventoryLotsPersistenceProvider(),
+      provider: getDocumentsPersistenceProvider(),
     });
   } catch (error) {
     return getErpApiErrorResponse(error, {
-      fallbackErrorMessage: "Falha ao carregar os lotes.",
+      fallbackErrorMessage: "Falha ao carregar os documentos.",
     });
   }
 }
@@ -54,13 +54,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    assertCanWriteErpResource(session, LOTS_RESOURCE_ID);
+    assertCanWriteErpResource(session, DOCUMENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const lot = await createLot(body.lot);
+    const document = await createDocument(body.document);
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.lot.created",
+      action: "erp.document.created",
       outcome: "success",
       actor: {
         accountId: session.account.id,
@@ -69,22 +69,22 @@ export async function POST(request: Request) {
       },
       target: {
         accountId: null,
-        resource: `${LOTS_RESOURCE_ID}:${lot.code}`,
+        resource: `${DOCUMENTS_RESOURCE_ID}:${document.id}`,
       },
       request: requestMetadata,
       metadata: {
-        version: lot.version,
+        version: document.version,
       },
     });
 
-    return NextResponse.json({ lot }, { status: 201 });
+    return NextResponse.json({ document }, { status: 201 });
   } catch (error) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.lot.created",
+      action: "erp.document.created",
       outcome,
       actor: {
         accountId: session.account.id,
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       },
       target: {
         accountId: null,
-        resource: LOTS_RESOURCE_ID,
+        resource: DOCUMENTS_RESOURCE_ID,
       },
       request: requestMetadata,
       metadata: {
@@ -102,8 +102,8 @@ export async function POST(request: Request) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para criacao do lote.",
-      fallbackErrorMessage: "Falha ao criar o lote.",
+      syntaxErrorMessage: "JSON invalido para criacao do documento.",
+      fallbackErrorMessage: "Falha ao criar o documento.",
     });
   }
 }

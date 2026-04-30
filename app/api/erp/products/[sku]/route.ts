@@ -7,7 +7,14 @@ import {
 } from "@/lib/server/erp-access-control";
 import { writeAuditLog } from "@/lib/server/audit-log";
 import { readServerSession } from "@/lib/server/auth-session";
-import { ErpResourceValidationError } from "@/lib/server/erp-resource-schema";
+import {
+  createInUseErrorHandler,
+  createPayloadErrorHandler,
+  createStatusMessageErrorHandler,
+  getErpApiErrorResponse,
+  getUnauthorizedErpResponse,
+  readJsonObjectBody,
+} from "@/lib/server/erp-api-errors";
 import {
   deleteProduct,
   getOperationsProductVersionConflictPayload,
@@ -30,23 +37,6 @@ type RouteContext = {
 
 const PRODUCTS_RESOURCE_ID = "operations.products";
 
-function getUnauthorizedResponse() {
-  return NextResponse.json(
-    { error: "Sessao obrigatoria para acessar o ERP." },
-    { status: 401 },
-  );
-}
-
-async function readJsonBody(request: Request) {
-  const rawBody = await request.text();
-
-  if (!rawBody.trim()) {
-    return {};
-  }
-
-  return JSON.parse(rawBody) as Record<string, unknown>;
-}
-
 function getProductTarget(sku: string) {
   return {
     accountId: null,
@@ -54,11 +44,26 @@ function getProductTarget(sku: string) {
   };
 }
 
+const getProductNotFoundResponse = createStatusMessageErrorHandler(
+  (error): error is OperationsProductNotFoundError =>
+    error instanceof OperationsProductNotFoundError,
+);
+const getProductConflictResponse = createPayloadErrorHandler(
+  (error): error is OperationsProductConflictError =>
+    error instanceof OperationsProductConflictError,
+  getOperationsProductVersionConflictPayload,
+);
+const getProductInUseResponse = createInUseErrorHandler(
+  (error): error is OperationsProductInUseError =>
+    error instanceof OperationsProductInUseError,
+  "PRODUCT_IN_USE",
+);
+
 export async function GET(_: Request, context: RouteContext) {
   const session = await readServerSession();
 
   if (!session) {
-    return getUnauthorizedResponse();
+    return getUnauthorizedErpResponse();
   }
 
   try {
@@ -67,21 +72,10 @@ export async function GET(_: Request, context: RouteContext) {
     const product = await getProductBySku(sku);
     return NextResponse.json({ product });
   } catch (error) {
-    if (error instanceof ErpAccessDeniedError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    if (error instanceof OperationsProductNotFoundError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    return NextResponse.json(
-      {
-        error: "Falha ao carregar o produto.",
-        details: error instanceof Error ? error.message : "Erro desconhecido.",
-      },
-      { status: 500 },
-    );
+    return getErpApiErrorResponse(error, {
+      fallbackErrorMessage: "Falha ao carregar o produto.",
+      handlers: [getProductNotFoundResponse],
+    });
   }
 }
 
@@ -90,14 +84,14 @@ export async function PUT(request: Request, context: RouteContext) {
   const requestMetadata = getRequestMetadata(request);
 
   if (!session) {
-    return getUnauthorizedResponse();
+    return getUnauthorizedErpResponse();
   }
 
   const { sku } = await context.params;
 
   try {
     assertCanWriteErpResource(session, PRODUCTS_RESOURCE_ID);
-    const body = await readJsonBody(request);
+    const body = await readJsonObjectBody(request);
     const baseVersion = requireOperationsProductBaseVersion(
       body.baseVersion,
       "atualizar",
@@ -141,39 +135,11 @@ export async function PUT(request: Request, context: RouteContext) {
       },
     });
 
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: "JSON invalido para atualizacao do produto." },
-        { status: 400 },
-      );
-    }
-
-    if (error instanceof ErpAccessDeniedError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    if (error instanceof ErpResourceValidationError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    if (error instanceof OperationsProductNotFoundError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    if (error instanceof OperationsProductConflictError) {
-      return NextResponse.json(
-        getOperationsProductVersionConflictPayload(error),
-        { status: error.status },
-      );
-    }
-
-    return NextResponse.json(
-      {
-        error: "Falha ao atualizar o produto.",
-        details: error instanceof Error ? error.message : "Erro desconhecido.",
-      },
-      { status: 500 },
-    );
+    return getErpApiErrorResponse(error, {
+      syntaxErrorMessage: "JSON invalido para atualizacao do produto.",
+      fallbackErrorMessage: "Falha ao atualizar o produto.",
+      handlers: [getProductNotFoundResponse, getProductConflictResponse],
+    });
   }
 }
 
@@ -182,14 +148,14 @@ export async function DELETE(request: Request, context: RouteContext) {
   const requestMetadata = getRequestMetadata(request);
 
   if (!session) {
-    return getUnauthorizedResponse();
+    return getUnauthorizedErpResponse();
   }
 
   const { sku } = await context.params;
 
   try {
     assertCanWriteErpResource(session, PRODUCTS_RESOURCE_ID);
-    const body = await readJsonBody(request);
+    const body = await readJsonObjectBody(request);
     const baseVersion = requireOperationsProductBaseVersion(
       body.baseVersion,
       "excluir",
@@ -238,48 +204,14 @@ export async function DELETE(request: Request, context: RouteContext) {
       },
     });
 
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: "JSON invalido para exclusao do produto." },
-        { status: 400 },
-      );
-    }
-
-    if (error instanceof ErpAccessDeniedError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    if (error instanceof ErpResourceValidationError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    if (error instanceof OperationsProductNotFoundError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    if (error instanceof OperationsProductConflictError) {
-      return NextResponse.json(
-        getOperationsProductVersionConflictPayload(error),
-        { status: error.status },
-      );
-    }
-
-    if (error instanceof OperationsProductInUseError) {
-      return NextResponse.json(
-        {
-          error: "PRODUCT_IN_USE",
-          reasons: error.reasons,
-        },
-        { status: error.status },
-      );
-    }
-
-    return NextResponse.json(
-      {
-        error: "Falha ao excluir o produto.",
-        details: error instanceof Error ? error.message : "Erro desconhecido.",
-      },
-      { status: 500 },
-    );
+    return getErpApiErrorResponse(error, {
+      syntaxErrorMessage: "JSON invalido para exclusao do produto.",
+      fallbackErrorMessage: "Falha ao excluir o produto.",
+      handlers: [
+        getProductNotFoundResponse,
+        getProductConflictResponse,
+        getProductInUseResponse,
+      ],
+    });
   }
 }

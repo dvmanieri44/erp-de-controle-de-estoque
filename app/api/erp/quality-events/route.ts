@@ -13,15 +13,15 @@ import {
   readJsonObjectBody,
 } from "@/lib/server/erp-api-errors";
 import {
-  createLot,
-  getInventoryLotsPersistenceProvider,
-  listLots,
-} from "@/lib/server/inventory-lots";
+  createQualityEvent,
+  getQualityEventsPersistenceProvider,
+  listQualityEvents,
+} from "@/lib/server/quality-events";
 import { getRequestMetadata } from "@/lib/server/request-metadata";
 
 export const runtime = "nodejs";
 
-const LOTS_RESOURCE_ID = "operations.lots";
+const QUALITY_EVENTS_RESOURCE_ID = "operations.quality-events";
 
 export async function GET() {
   const session = await readServerSession();
@@ -31,16 +31,16 @@ export async function GET() {
   }
 
   try {
-    assertCanReadErpResource(session, LOTS_RESOURCE_ID);
-    const payload = await listLots();
+    assertCanReadErpResource(session, QUALITY_EVENTS_RESOURCE_ID);
+    const payload = await listQualityEvents();
 
     return NextResponse.json({
       ...payload,
-      provider: getInventoryLotsPersistenceProvider(),
+      provider: getQualityEventsPersistenceProvider(),
     });
   } catch (error) {
     return getErpApiErrorResponse(error, {
-      fallbackErrorMessage: "Falha ao carregar os lotes.",
+      fallbackErrorMessage: "Falha ao carregar os eventos de qualidade.",
     });
   }
 }
@@ -54,13 +54,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    assertCanWriteErpResource(session, LOTS_RESOURCE_ID);
+    assertCanWriteErpResource(session, QUALITY_EVENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const lot = await createLot(body.lot);
+    const event = await createQualityEvent(body.event);
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.lot.created",
+      action: "erp.quality_event.created",
       outcome: "success",
       actor: {
         accountId: session.account.id,
@@ -69,22 +69,22 @@ export async function POST(request: Request) {
       },
       target: {
         accountId: null,
-        resource: `${LOTS_RESOURCE_ID}:${lot.code}`,
+        resource: `${QUALITY_EVENTS_RESOURCE_ID}:${event.id}`,
       },
       request: requestMetadata,
       metadata: {
-        version: lot.version,
+        version: event.version,
       },
     });
 
-    return NextResponse.json({ lot }, { status: 201 });
+    return NextResponse.json({ event }, { status: 201 });
   } catch (error) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.lot.created",
+      action: "erp.quality_event.created",
       outcome,
       actor: {
         accountId: session.account.id,
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       },
       target: {
         accountId: null,
-        resource: LOTS_RESOURCE_ID,
+        resource: QUALITY_EVENTS_RESOURCE_ID,
       },
       request: requestMetadata,
       metadata: {
@@ -102,8 +102,8 @@ export async function POST(request: Request) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para criacao do lote.",
-      fallbackErrorMessage: "Falha ao criar o lote.",
+      syntaxErrorMessage: "JSON invalido para criacao do evento de qualidade.",
+      fallbackErrorMessage: "Falha ao criar o evento de qualidade.",
     });
   }
 }

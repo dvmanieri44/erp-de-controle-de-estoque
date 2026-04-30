@@ -333,6 +333,226 @@ describe("backend maturity", () => {
     }
   });
 
+  it("blocks generic writes for operations quality events in favor of dedicated routes", async () => {
+    const context = {
+      params: Promise.resolve({
+        resource: "operations.quality-events",
+      }),
+    };
+    const expectedPayload = {
+      error:
+        "Os eventos de qualidade devem ser alterados apenas pelas rotas dedicadas /api/erp/quality-events e /api/erp/quality-events/[eventId].",
+    };
+
+    const putResponse = await putErpStateResourceRoute(
+      new Request("http://localhost/api/erp/state/operations.quality-events", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: [],
+          baseVersion: 0,
+        }),
+      }),
+      context,
+    );
+    assert.equal(putResponse.status, 403);
+    assert.deepEqual(await putResponse.json(), expectedPayload);
+
+    for (const [method, handler] of [
+      ["POST", postErpStateResourceRoute],
+      ["PATCH", patchErpStateResourceRoute],
+      ["DELETE", deleteErpStateResourceRoute],
+    ] as const) {
+      const response = await handler(
+        new Request("http://localhost/api/erp/state/operations.quality-events", {
+          method,
+        }),
+        context,
+      );
+
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), expectedPayload);
+    }
+  });
+
+  it("blocks generic writes for operations incidents in favor of dedicated routes", async () => {
+    const context = {
+      params: Promise.resolve({
+        resource: "operations.incidents",
+      }),
+    };
+    const expectedPayload = {
+      error:
+        "Os incidentes devem ser alterados apenas pelas rotas dedicadas /api/erp/incidents e /api/erp/incidents/[incidentId].",
+    };
+
+    const putResponse = await putErpStateResourceRoute(
+      new Request("http://localhost/api/erp/state/operations.incidents", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: [],
+          baseVersion: 0,
+        }),
+      }),
+      context,
+    );
+    assert.equal(putResponse.status, 403);
+    assert.deepEqual(await putResponse.json(), expectedPayload);
+
+    for (const [method, handler] of [
+      ["POST", postErpStateResourceRoute],
+      ["PATCH", patchErpStateResourceRoute],
+      ["DELETE", deleteErpStateResourceRoute],
+    ] as const) {
+      const response = await handler(
+        new Request("http://localhost/api/erp/state/operations.incidents", {
+          method,
+        }),
+        context,
+      );
+
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), expectedPayload);
+    }
+  });
+
+  it("blocks generic writes for operations documents in favor of dedicated routes", async () => {
+    const context = {
+      params: Promise.resolve({
+        resource: "operations.documents",
+      }),
+    };
+    const expectedPayload = {
+      error:
+        "Os documentos devem ser alterados apenas pelas rotas dedicadas /api/erp/documents e /api/erp/documents/[documentId].",
+    };
+
+    const putResponse = await putErpStateResourceRoute(
+      new Request("http://localhost/api/erp/state/operations.documents", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: [],
+          baseVersion: 0,
+        }),
+      }),
+      context,
+    );
+    assert.equal(putResponse.status, 403);
+    assert.deepEqual(await putResponse.json(), expectedPayload);
+
+    for (const [method, handler] of [
+      ["POST", postErpStateResourceRoute],
+      ["PATCH", patchErpStateResourceRoute],
+      ["DELETE", deleteErpStateResourceRoute],
+    ] as const) {
+      const response = await handler(
+        new Request("http://localhost/api/erp/state/operations.documents", {
+          method,
+        }),
+        context,
+      );
+
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), expectedPayload);
+    }
+  });
+
+  it("blocks generic writes for operations tasks in favor of dedicated routes", async () => {
+    const context = {
+      params: Promise.resolve({
+        resource: "operations.tasks",
+      }),
+    };
+    const expectedPayload = {
+      error:
+        "As tarefas devem ser alteradas apenas pelas rotas dedicadas /api/erp/tasks e /api/erp/tasks/[taskId].",
+    };
+
+    const putResponse = await putErpStateResourceRoute(
+      new Request("http://localhost/api/erp/state/operations.tasks", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: [],
+          baseVersion: 0,
+        }),
+      }),
+      context,
+    );
+    assert.equal(putResponse.status, 403);
+    assert.deepEqual(await putResponse.json(), expectedPayload);
+
+    for (const [method, handler] of [
+      ["POST", postErpStateResourceRoute],
+      ["PATCH", patchErpStateResourceRoute],
+      ["DELETE", deleteErpStateResourceRoute],
+    ] as const) {
+      const response = await handler(
+        new Request("http://localhost/api/erp/state/operations.tasks", {
+          method,
+        }),
+        context,
+      );
+
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), expectedPayload);
+    }
+  });
+
+  it("blocks generic writes for operations pending in favor of dedicated routes", async () => {
+    const context = {
+      params: Promise.resolve({
+        resource: "operations.pending",
+      }),
+    };
+    const expectedPayload = {
+      error:
+        "As pendencias devem ser alteradas apenas pelas rotas dedicadas /api/erp/pending e /api/erp/pending/[pendingId].",
+    };
+
+    const putResponse = await putErpStateResourceRoute(
+      new Request("http://localhost/api/erp/state/operations.pending", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: [],
+          baseVersion: 0,
+        }),
+      }),
+      context,
+    );
+    assert.equal(putResponse.status, 403);
+    assert.deepEqual(await putResponse.json(), expectedPayload);
+
+    for (const [method, handler] of [
+      ["POST", postErpStateResourceRoute],
+      ["PATCH", patchErpStateResourceRoute],
+      ["DELETE", deleteErpStateResourceRoute],
+    ] as const) {
+      const response = await handler(
+        new Request("http://localhost/api/erp/state/operations.pending", {
+          method,
+        }),
+        context,
+      );
+
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), expectedPayload);
+    }
+  });
+
   it("reads and writes ERP resources through the Firestore path", async () => {
     const firestore = new FakeFirestoreAdminDb();
     setFirebaseAdminDbForTests(firestore);

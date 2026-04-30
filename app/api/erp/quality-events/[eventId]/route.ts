@@ -8,7 +8,6 @@ import {
 import { writeAuditLog } from "@/lib/server/audit-log";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
-  createInUseErrorHandler,
   createPayloadErrorHandler,
   createStatusMessageErrorHandler,
   getErpApiErrorResponse,
@@ -16,47 +15,41 @@ import {
   readJsonObjectBody,
 } from "@/lib/server/erp-api-errors";
 import {
-  deleteLocation,
-  getInventoryLocationVersionConflictPayload,
-  getLocationById,
-  InventoryLocationConflictError,
-  InventoryLocationInUseError,
-  InventoryLocationNotFoundError,
-  requireInventoryLocationBaseVersion,
-  updateLocation,
-} from "@/lib/server/inventory-locations";
+  deleteQualityEvent,
+  getQualityEventById,
+  getQualityEventVersionConflictPayload,
+  QualityEventConflictError,
+  QualityEventNotFoundError,
+  requireQualityEventBaseVersion,
+  updateQualityEvent,
+} from "@/lib/server/quality-events";
 import { getRequestMetadata } from "@/lib/server/request-metadata";
 
 export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
-    locationId: string;
+    eventId: string;
   }>;
 };
 
-const LOCATIONS_RESOURCE_ID = "inventory.locations";
+const QUALITY_EVENTS_RESOURCE_ID = "operations.quality-events";
 
-function getLocationTarget(locationId: string) {
+function getQualityEventTarget(eventId: string) {
   return {
     accountId: null,
-    resource: `${LOCATIONS_RESOURCE_ID}:${locationId}`,
+    resource: `${QUALITY_EVENTS_RESOURCE_ID}:${eventId}`,
   };
 }
 
-const getLocationNotFoundResponse = createStatusMessageErrorHandler(
-  (error): error is InventoryLocationNotFoundError =>
-    error instanceof InventoryLocationNotFoundError,
+const getQualityEventNotFoundResponse = createStatusMessageErrorHandler(
+  (error): error is QualityEventNotFoundError =>
+    error instanceof QualityEventNotFoundError,
 );
-const getLocationConflictResponse = createPayloadErrorHandler(
-  (error): error is InventoryLocationConflictError =>
-    error instanceof InventoryLocationConflictError,
-  getInventoryLocationVersionConflictPayload,
-);
-const getLocationInUseResponse = createInUseErrorHandler(
-  (error): error is InventoryLocationInUseError =>
-    error instanceof InventoryLocationInUseError,
-  "LOCATION_IN_USE",
+const getQualityEventConflictResponse = createPayloadErrorHandler(
+  (error): error is QualityEventConflictError =>
+    error instanceof QualityEventConflictError,
+  getQualityEventVersionConflictPayload,
 );
 
 export async function GET(_: Request, context: RouteContext) {
@@ -67,14 +60,14 @@ export async function GET(_: Request, context: RouteContext) {
   }
 
   try {
-    const { locationId } = await context.params;
-    assertCanReadErpResource(session, LOCATIONS_RESOURCE_ID);
-    const location = await getLocationById(locationId);
-    return NextResponse.json({ location });
+    const { eventId } = await context.params;
+    assertCanReadErpResource(session, QUALITY_EVENTS_RESOURCE_ID);
+    const event = await getQualityEventById(eventId);
+    return NextResponse.json({ event });
   } catch (error) {
     return getErpApiErrorResponse(error, {
-      fallbackErrorMessage: "Falha ao carregar a localizacao.",
-      handlers: [getLocationNotFoundResponse],
+      fallbackErrorMessage: "Falha ao carregar o evento de qualidade.",
+      handlers: [getQualityEventNotFoundResponse],
     });
   }
 }
@@ -87,52 +80,50 @@ export async function PUT(request: Request, context: RouteContext) {
     return getUnauthorizedErpResponse();
   }
 
-  const { locationId } = await context.params;
+  const { eventId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanWriteErpResource(session, QUALITY_EVENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const baseVersion = requireInventoryLocationBaseVersion(
+    const baseVersion = requireQualityEventBaseVersion(
       body.baseVersion,
       "atualizar",
     );
-    const location = await updateLocation(
-      locationId,
-      body.location,
-      { baseVersion },
-    );
+    const event = await updateQualityEvent(eventId, body.event, {
+      baseVersion,
+    });
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.updated",
+      action: "erp.quality_event.updated",
       outcome: "success",
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getQualityEventTarget(eventId),
       request: requestMetadata,
       metadata: {
-        version: location.version,
+        version: event.version,
       },
     });
 
-    return NextResponse.json({ location });
+    return NextResponse.json({ event });
   } catch (error) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.updated",
+      action: "erp.quality_event.updated",
       outcome,
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getQualityEventTarget(eventId),
       request: requestMetadata,
       metadata: {
         error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -140,9 +131,12 @@ export async function PUT(request: Request, context: RouteContext) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para atualizacao da localizacao.",
-      fallbackErrorMessage: "Falha ao atualizar a localizacao.",
-      handlers: [getLocationNotFoundResponse, getLocationConflictResponse],
+      syntaxErrorMessage: "JSON invalido para atualizacao do evento de qualidade.",
+      fallbackErrorMessage: "Falha ao atualizar o evento de qualidade.",
+      handlers: [
+        getQualityEventNotFoundResponse,
+        getQualityEventConflictResponse,
+      ],
     });
   }
 }
@@ -155,38 +149,38 @@ export async function DELETE(request: Request, context: RouteContext) {
     return getUnauthorizedErpResponse();
   }
 
-  const { locationId } = await context.params;
+  const { eventId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanWriteErpResource(session, QUALITY_EVENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
-    const baseVersion = requireInventoryLocationBaseVersion(
+    const baseVersion = requireQualityEventBaseVersion(
       body.baseVersion,
       "excluir",
     );
-    const deletedLocation = await deleteLocation(locationId, baseVersion);
+    const deletedEvent = await deleteQualityEvent(eventId, baseVersion);
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.deleted",
+      action: "erp.quality_event.deleted",
       outcome: "success",
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getQualityEventTarget(eventId),
       request: requestMetadata,
       metadata: {
-        version: deletedLocation.version,
-        deletedAt: deletedLocation.deletedAt,
+        version: deletedEvent.version,
+        deletedAt: deletedEvent.deletedAt,
       },
     });
 
     return NextResponse.json({
-      locationId: deletedLocation.id,
-      version: deletedLocation.version,
-      deletedAt: deletedLocation.deletedAt,
+      eventId: deletedEvent.id,
+      version: deletedEvent.version,
+      deletedAt: deletedEvent.deletedAt,
     });
   } catch (error) {
     const outcome =
@@ -194,14 +188,14 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     await writeAuditLog({
       category: "erp",
-      action: "erp.location.deleted",
+      action: "erp.quality_event.deleted",
       outcome,
       actor: {
         accountId: session.account.id,
         username: session.username,
         role: session.role,
       },
-      target: getLocationTarget(locationId),
+      target: getQualityEventTarget(eventId),
       request: requestMetadata,
       metadata: {
         error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -209,12 +203,11 @@ export async function DELETE(request: Request, context: RouteContext) {
     });
 
     return getErpApiErrorResponse(error, {
-      syntaxErrorMessage: "JSON invalido para exclusao da localizacao.",
-      fallbackErrorMessage: "Falha ao excluir a localizacao.",
+      syntaxErrorMessage: "JSON invalido para exclusao do evento de qualidade.",
+      fallbackErrorMessage: "Falha ao excluir o evento de qualidade.",
       handlers: [
-        getLocationNotFoundResponse,
-        getLocationConflictResponse,
-        getLocationInUseResponse,
+        getQualityEventNotFoundResponse,
+        getQualityEventConflictResponse,
       ],
     });
   }

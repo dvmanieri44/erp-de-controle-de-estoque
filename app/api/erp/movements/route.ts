@@ -8,6 +8,12 @@ import {
 import { writeAuditLog } from "@/lib/server/audit-log";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
+  createPayloadErrorHandler,
+  getErpApiErrorResponse,
+  getUnauthorizedErpResponse,
+  readJsonObjectBody,
+} from "@/lib/server/erp-api-errors";
+import {
   createInventoryMovement,
   getInventoryMovementInvalidProductIdPayload,
   getInventoryMovementInvalidLotCodePayload,
@@ -22,35 +28,17 @@ import {
   InventoryMovementInvalidLotProductError,
   listInventoryMovements,
 } from "@/lib/server/inventory-movements";
-import { ErpResourceValidationError } from "@/lib/server/erp-resource-schema";
 import { getRequestMetadata } from "@/lib/server/request-metadata";
 
 export const runtime = "nodejs";
 
 const MOVEMENTS_RESOURCE_ID = "inventory.movements";
 
-function getUnauthorizedResponse() {
-  return NextResponse.json(
-    { error: "Sessao obrigatoria para acessar o ERP." },
-    { status: 401 },
-  );
-}
-
-async function readJsonBody(request: Request) {
-  const rawBody = await request.text();
-
-  if (!rawBody.trim()) {
-    return {};
-  }
-
-  return JSON.parse(rawBody) as Record<string, unknown>;
-}
-
 export async function GET() {
   const session = await readServerSession();
 
   if (!session) {
-    return getUnauthorizedResponse();
+    return getUnauthorizedErpResponse();
   }
 
   try {
@@ -62,17 +50,9 @@ export async function GET() {
       provider: getInventoryMovementsPersistenceProvider(),
     });
   } catch (error) {
-    if (error instanceof ErpAccessDeniedError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    return NextResponse.json(
-      {
-        error: "Falha ao carregar as movimentacoes.",
-        details: error instanceof Error ? error.message : "Erro desconhecido.",
-      },
-      { status: 500 },
-    );
+    return getErpApiErrorResponse(error, {
+      fallbackErrorMessage: "Falha ao carregar as movimentacoes.",
+    });
   }
 }
 
@@ -81,12 +61,12 @@ export async function POST(request: Request) {
   const requestMetadata = getRequestMetadata(request);
 
   if (!session) {
-    return getUnauthorizedResponse();
+    return getUnauthorizedErpResponse();
   }
 
   try {
     assertCanWriteErpResource(session, MOVEMENTS_RESOURCE_ID);
-    const body = await readJsonBody(request);
+    const body = await readJsonObjectBody(request);
     const movement = await createInventoryMovement(body.movement);
 
     await writeAuditLog({
@@ -133,62 +113,36 @@ export async function POST(request: Request) {
       },
     });
 
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: "JSON invalido para criacao da movimentacao." },
-        { status: 400 },
-      );
-    }
-
-    if (error instanceof ErpAccessDeniedError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    if (error instanceof ErpResourceValidationError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    if (error instanceof InventoryMovementInvalidProductIdError) {
-      return NextResponse.json(
-        getInventoryMovementInvalidProductIdPayload(),
-        { status: error.status },
-      );
-    }
-
-    if (error instanceof InventoryMovementInvalidLotCodeError) {
-      return NextResponse.json(
-        getInventoryMovementInvalidLotCodePayload(),
-        { status: error.status },
-      );
-    }
-
-    if (error instanceof InventoryMovementInvalidLotProductError) {
-      return NextResponse.json(
-        getInventoryMovementInvalidLotProductPayload(),
-        { status: error.status },
-      );
-    }
-
-    if (error instanceof InventoryMovementInvalidLotLocationError) {
-      return NextResponse.json(
-        getInventoryMovementInvalidLotLocationPayload(),
-        { status: error.status },
-      );
-    }
-
-    if (error instanceof InventoryMovementConflictError) {
-      return NextResponse.json(
-        getInventoryMovementVersionConflictPayload(error),
-        { status: error.status },
-      );
-    }
-
-    return NextResponse.json(
-      {
-        error: "Falha ao criar a movimentacao.",
-        details: error instanceof Error ? error.message : "Erro desconhecido.",
-      },
-      { status: 500 },
-    );
+    return getErpApiErrorResponse(error, {
+      syntaxErrorMessage: "JSON invalido para criacao da movimentacao.",
+      fallbackErrorMessage: "Falha ao criar a movimentacao.",
+      handlers: [
+        createPayloadErrorHandler(
+          (error): error is InventoryMovementInvalidProductIdError =>
+            error instanceof InventoryMovementInvalidProductIdError,
+          () => getInventoryMovementInvalidProductIdPayload(),
+        ),
+        createPayloadErrorHandler(
+          (error): error is InventoryMovementInvalidLotCodeError =>
+            error instanceof InventoryMovementInvalidLotCodeError,
+          () => getInventoryMovementInvalidLotCodePayload(),
+        ),
+        createPayloadErrorHandler(
+          (error): error is InventoryMovementInvalidLotProductError =>
+            error instanceof InventoryMovementInvalidLotProductError,
+          () => getInventoryMovementInvalidLotProductPayload(),
+        ),
+        createPayloadErrorHandler(
+          (error): error is InventoryMovementInvalidLotLocationError =>
+            error instanceof InventoryMovementInvalidLotLocationError,
+          () => getInventoryMovementInvalidLotLocationPayload(),
+        ),
+        createPayloadErrorHandler(
+          (error): error is InventoryMovementConflictError =>
+            error instanceof InventoryMovementConflictError,
+          getInventoryMovementVersionConflictPayload,
+        ),
+      ],
+    });
   }
 }

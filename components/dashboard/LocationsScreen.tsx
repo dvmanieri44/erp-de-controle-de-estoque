@@ -225,9 +225,15 @@ const COPY = {
 } as const;
 
 const LOCATION_CONFLICT_MESSAGES: Record<keyof typeof COPY, string> = {
-  "pt-BR": "A localizacao foi alterada em outra sessao. Recarregamos os dados antes de salvar novamente.",
-  "en-US": "This location was changed in another session. We reloaded the data before saving again.",
-  "es-ES": "Esta ubicacion fue alterada en otra sesion. Recargamos los datos antes de guardar de nuevo.",
+  "pt-BR": "Conflito de versao: esta localizacao foi alterada em outra sessao. Recarregamos a lista e nao salvamos sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.",
+  "en-US": "Version conflict: this location was changed in another session. We reloaded the list and did not save your change to avoid overwriting data. Review and try again.",
+  "es-ES": "Conflicto de version: esta ubicacion fue alterada en otra sesion. Recargamos la lista y no guardamos tu cambio para evitar sobrescribir datos. Revisa e intenta de nuevo.",
+};
+
+const LOCATION_CREATE_CONFLICT_MESSAGES: Record<keyof typeof COPY, string> = {
+  "pt-BR": "Nao foi possivel salvar porque houve conflito no cadastro da localizacao. Recarregamos a lista e nao sobrescrevemos nada. Revise os dados e tente novamente.",
+  "en-US": "Could not save because there was a conflict while creating the location. We reloaded the list and did not overwrite anything. Review and try again.",
+  "es-ES": "No se pudo guardar porque hubo un conflicto al crear la ubicacion. Recargamos la lista y no sobrescribimos nada. Revisa e intenta de nuevo.",
 };
 
 const LOCATION_IN_USE_MESSAGES: Record<keyof typeof COPY, string> = {
@@ -791,7 +797,17 @@ export function LocationsScreen() {
           tone: "success",
         });
         closeModal();
-      } catch {
+      } catch (error) {
+        if (error instanceof LocationRequestError && error.status === 409) {
+          await reloadLocationsAfterConflict();
+          setToast({
+            id: Date.now(),
+            message: LOCATION_CREATE_CONFLICT_MESSAGES[locale],
+            tone: "error",
+          });
+          return;
+        }
+
         setToast({
           id: Date.now(),
           message: copy.syncDataError,

@@ -14,6 +14,11 @@ const MOVEMENTS_RESOURCE_ID = "inventory.movements";
 const LOTS_RESOURCE_ID = "operations.lots";
 const LOCATIONS_RESOURCE_ID = "inventory.locations";
 const PRODUCTS_RESOURCE_ID = "operations.products";
+const QUALITY_EVENTS_RESOURCE_ID = "operations.quality-events";
+const INCIDENTS_RESOURCE_ID = "operations.incidents";
+const DOCUMENTS_RESOURCE_ID = "operations.documents";
+const TASKS_RESOURCE_ID = "operations.tasks";
+const PENDING_RESOURCE_ID = "operations.pending";
 
 type RouteContext = {
   params: Promise<{
@@ -57,6 +62,36 @@ function getRestrictedLocationsWriteResponse() {
 function getRestrictedProductsWriteResponse() {
   return getRestrictedResourceResponse(
     "Os produtos devem ser alterados apenas pelas rotas dedicadas /api/erp/products e /api/erp/products/[sku].",
+  );
+}
+
+function getRestrictedQualityEventsWriteResponse() {
+  return getRestrictedResourceResponse(
+    "Os eventos de qualidade devem ser alterados apenas pelas rotas dedicadas /api/erp/quality-events e /api/erp/quality-events/[eventId].",
+  );
+}
+
+function getRestrictedIncidentsWriteResponse() {
+  return getRestrictedResourceResponse(
+    "Os incidentes devem ser alterados apenas pelas rotas dedicadas /api/erp/incidents e /api/erp/incidents/[incidentId].",
+  );
+}
+
+function getRestrictedDocumentsWriteResponse() {
+  return getRestrictedResourceResponse(
+    "Os documentos devem ser alterados apenas pelas rotas dedicadas /api/erp/documents e /api/erp/documents/[documentId].",
+  );
+}
+
+function getRestrictedTasksWriteResponse() {
+  return getRestrictedResourceResponse(
+    "As tarefas devem ser alteradas apenas pelas rotas dedicadas /api/erp/tasks e /api/erp/tasks/[taskId].",
+  );
+}
+
+function getRestrictedPendingWriteResponse() {
+  return getRestrictedResourceResponse(
+    "As pendencias devem ser alteradas apenas pelas rotas dedicadas /api/erp/pending e /api/erp/pending/[pendingId].",
   );
 }
 
@@ -113,6 +148,26 @@ export async function PUT(request: Request, context: RouteContext) {
 
   if (resource === PRODUCTS_RESOURCE_ID) {
     return getRestrictedProductsWriteResponse();
+  }
+
+  if (resource === QUALITY_EVENTS_RESOURCE_ID) {
+    return getRestrictedQualityEventsWriteResponse();
+  }
+
+  if (resource === INCIDENTS_RESOURCE_ID) {
+    return getRestrictedIncidentsWriteResponse();
+  }
+
+  if (resource === DOCUMENTS_RESOURCE_ID) {
+    return getRestrictedDocumentsWriteResponse();
+  }
+
+  if (resource === TASKS_RESOURCE_ID) {
+    return getRestrictedTasksWriteResponse();
+  }
+
+  if (resource === PENDING_RESOURCE_ID) {
+    return getRestrictedPendingWriteResponse();
   }
 
   const session = await readServerSession();
@@ -249,6 +304,26 @@ async function handleUnsupportedWriteMethod(context: RouteContext) {
 
   if (resource === PRODUCTS_RESOURCE_ID) {
     return getRestrictedProductsWriteResponse();
+  }
+
+  if (resource === QUALITY_EVENTS_RESOURCE_ID) {
+    return getRestrictedQualityEventsWriteResponse();
+  }
+
+  if (resource === INCIDENTS_RESOURCE_ID) {
+    return getRestrictedIncidentsWriteResponse();
+  }
+
+  if (resource === DOCUMENTS_RESOURCE_ID) {
+    return getRestrictedDocumentsWriteResponse();
+  }
+
+  if (resource === TASKS_RESOURCE_ID) {
+    return getRestrictedTasksWriteResponse();
+  }
+
+  if (resource === PENDING_RESOURCE_ID) {
+    return getRestrictedPendingWriteResponse();
   }
 
   return new NextResponse(null, {
