@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 
 import {
   ErpAccessDeniedError,
+  assertCanDeleteErpResource,
   assertCanReadErpResource,
-  assertCanWriteErpResource,
+  assertCanUpdateErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   createPayloadErrorHandler,
@@ -34,13 +38,6 @@ type RouteContext = {
 };
 
 const DOCUMENTS_RESOURCE_ID = "operations.documents";
-
-function getDocumentTarget(documentId: string) {
-  return {
-    accountId: null,
-    resource: `${DOCUMENTS_RESOURCE_ID}:${documentId}`,
-  };
-}
 
 const getDocumentNotFoundResponse = createStatusMessageErrorHandler(
   (error): error is DocumentNotFoundError =>
@@ -83,30 +80,26 @@ export async function PUT(request: Request, context: RouteContext) {
   const { documentId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, DOCUMENTS_RESOURCE_ID);
+    assertCanUpdateErpResource(session, DOCUMENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireDocumentBaseVersion(
       body.baseVersion,
       "atualizar",
     );
+    const before = await getDocumentById(documentId);
     const document = await updateDocument(documentId, body.document, {
       baseVersion,
     });
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.document.updated",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getDocumentTarget(documentId),
+      session,
+      resource: DOCUMENTS_RESOURCE_ID,
+      entityId: documentId,
       request: requestMetadata,
-      metadata: {
-        version: document.version,
-      },
+      before,
+      after: document,
+      version: document.version,
     });
 
     return NextResponse.json({ document });
@@ -114,20 +107,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.document.updated",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getDocumentTarget(documentId),
+      session,
+      resource: DOCUMENTS_RESOURCE_ID,
+      entityId: documentId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {
@@ -149,27 +136,24 @@ export async function DELETE(request: Request, context: RouteContext) {
   const { documentId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, DOCUMENTS_RESOURCE_ID);
+    assertCanDeleteErpResource(session, DOCUMENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireDocumentBaseVersion(
       body.baseVersion,
       "excluir",
     );
+    const before = await getDocumentById(documentId);
     const deletedDocument = await deleteDocument(documentId, baseVersion);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.document.deleted",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getDocumentTarget(documentId),
+      session,
+      resource: DOCUMENTS_RESOURCE_ID,
+      entityId: documentId,
       request: requestMetadata,
+      before,
+      version: deletedDocument.version,
       metadata: {
-        version: deletedDocument.version,
         deletedAt: deletedDocument.deletedAt,
       },
     });
@@ -183,20 +167,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.document.deleted",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getDocumentTarget(documentId),
+      session,
+      resource: DOCUMENTS_RESOURCE_ID,
+      entityId: documentId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

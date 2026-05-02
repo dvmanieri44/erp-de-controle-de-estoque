@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { DocumentsModule } from "@/components/dashboard/operations/DocumentsModule";
+import { IncidentsModule } from "@/components/dashboard/operations/IncidentsModule";
+import { PendingModule } from "@/components/dashboard/operations/PendingModule";
+import { QualityEventsModule } from "@/components/dashboard/operations/QualityEventsModule";
+import { TasksModule } from "@/components/dashboard/operations/TasksModule";
 import { useLocale } from "@/components/providers/LocaleProvider";
 import { ERP_DATA_EVENT } from "@/lib/app-events";
 import type { DashboardSection } from "@/lib/dashboard-sections";
@@ -14,28 +19,18 @@ import {
   type CategoryItem,
   DISTRIBUTORS,
   type DistributorItem,
-  DOCUMENTS,
-  type DocumentItem,
-  INCIDENTS,
-  type IncidentItem,
   LOTS,
   type LotItem,
   NOTIFICATIONS,
   type NotificationItem,
-  PENDING_ITEMS,
-  type PendingItem,
   PLANNING_ITEMS,
   type PlanningItem,
   PRODUCT_LINES,
   type ProductLineItem,
-  QUALITY_EVENTS,
-  type QualityEventItem,
   REPORTS,
   type ReportItem,
   SUPPLIERS,
   type SupplierItem,
-  TASKS,
-  type TaskItem,
 } from "@/lib/operations-data";
 import {
   findMatchingProductReference,
@@ -51,54 +46,23 @@ import {
   type LocationItem,
   type MovementItem,
 } from "@/lib/inventory";
-import { useErpMutation } from "@/lib/use-erp-mutation";
 import {
   createProductLine as createProductRecord,
-  createDocument as createDocumentRecord,
-  createIncident as createIncidentRecord,
-  createPendingItem as createPendingItemRecord,
-  createQualityEvent as createQualityEventRecord,
-  createTask as createTaskRecord,
-  deleteDocument as deleteDocumentRecord,
-  deleteIncident as deleteIncidentRecord,
-  deletePendingItem as deletePendingItemRecord,
-  deleteQualityEvent as deleteQualityEventRecord,
-  deleteTask as deleteTaskRecord,
   createLot as createLotRecord,
   loadCalendarEvents,
   loadCategories,
   loadDistributors,
-  loadDocuments,
-  loadIncidents,
   loadLots,
   loadNotifications,
-  loadPendingItems,
   loadPlanningItems,
   loadProductLines,
-  loadQualityEvents,
   loadReports,
   loadSuppliers,
-  loadTasks,
-  IncidentRequestError,
-  IncidentVersionConflictError,
   LotRequestError,
-  DocumentRequestError,
-  DocumentVersionConflictError,
   ProductRequestError,
   ProductVersionConflictError,
-  QualityEventRequestError,
-  QualityEventVersionConflictError,
-  PendingItemRequestError,
-  PendingItemVersionConflictError,
-  TaskRequestError,
-  TaskVersionConflictError,
-  refreshIncidents,
-  refreshDocuments,
   refreshLots,
-  refreshPendingItems,
-  refreshQualityEvents,
   refreshProductLines,
-  refreshTasks,
   saveCalendarEvents,
   saveCategories,
   saveDistributors,
@@ -106,17 +70,8 @@ import {
   savePlanningItems,
   saveReports,
   saveSuppliers,
-  updatePendingItem as updatePendingItemRecord,
-  updateQualityEvent as updateQualityEventRecord,
-  updateDocument as updateDocumentRecord,
-  updateIncident as updateIncidentRecord,
-  updateTask as updateTaskRecord,
-  type VersionedDocumentItem,
-  type VersionedIncidentItem,
-  type VersionedPendingItem,
-  type VersionedQualityEventItem,
-  type VersionedTaskItem,
 } from "@/lib/operations-store";
+import { useErpPermissions } from "@/lib/use-erp-permissions";
 
 const PRODUCT_CONFLICT_MESSAGE =
   "Conflito de versao: os produtos foram alterados por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
@@ -124,94 +79,6 @@ const PRODUCT_CREATE_CONFLICT_MESSAGE =
   "Nao foi possivel salvar porque houve conflito no cadastro do produto. Recarreguei a lista e nao sobrescrevi nada. Revise o SKU e tente novamente.";
 const LOT_CONFLICT_MESSAGE =
   "Nao foi possivel salvar porque houve conflito no cadastro do lote. Recarreguei a lista e nao sobrescrevi nada. Revise o codigo do lote e tente novamente.";
-const QUALITY_EVENT_CONFLICT_MESSAGE =
-  "Conflito de versao: este evento de qualidade foi alterado por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
-const INCIDENT_CONFLICT_MESSAGE =
-  "Conflito de versao: este incidente foi alterado por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
-const DOCUMENT_CONFLICT_MESSAGE =
-  "Conflito de versao: este documento foi alterado por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
-const TASK_CONFLICT_MESSAGE =
-  "Conflito de versao: esta tarefa foi alterada por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
-const PENDING_CONFLICT_MESSAGE =
-  "Conflito de versao: esta pendencia foi alterada por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
-
-function isQualityEventMutationConflict(error: unknown) {
-  return (
-    error instanceof QualityEventVersionConflictError ||
-    (error instanceof QualityEventRequestError && error.status === 409)
-  );
-}
-
-function getQualityEventMutationErrorMessage(
-  error: unknown,
-  fallbackMessage: string,
-) {
-  return error instanceof QualityEventRequestError
-    ? error.message
-    : fallbackMessage;
-}
-
-function isIncidentMutationConflict(error: unknown) {
-  return (
-    error instanceof IncidentVersionConflictError ||
-    (error instanceof IncidentRequestError && error.status === 409)
-  );
-}
-
-function getIncidentMutationErrorMessage(
-  error: unknown,
-  fallbackMessage: string,
-) {
-  return error instanceof IncidentRequestError
-    ? error.message
-    : fallbackMessage;
-}
-
-function isDocumentMutationConflict(error: unknown) {
-  return (
-    error instanceof DocumentVersionConflictError ||
-    (error instanceof DocumentRequestError && error.status === 409)
-  );
-}
-
-function getDocumentMutationErrorMessage(
-  error: unknown,
-  fallbackMessage: string,
-) {
-  return error instanceof DocumentRequestError
-    ? error.message
-    : fallbackMessage;
-}
-
-function isPendingMutationConflict(error: unknown) {
-  return (
-    error instanceof PendingItemVersionConflictError ||
-    (error instanceof PendingItemRequestError && error.status === 409)
-  );
-}
-
-function getPendingMutationErrorMessage(
-  error: unknown,
-  fallbackMessage: string,
-) {
-  return error instanceof PendingItemRequestError
-    ? error.message
-    : fallbackMessage;
-}
-
-function isTaskMutationConflict(error: unknown) {
-  return (
-    error instanceof TaskVersionConflictError ||
-    (error instanceof TaskRequestError && error.status === 409)
-  );
-}
-
-function getTaskMutationErrorMessage(
-  error: unknown,
-  fallbackMessage: string,
-) {
-  return error instanceof TaskRequestError ? error.message : fallbackMessage;
-}
 
 function Hero({
   section,
@@ -1250,6 +1117,8 @@ function LegacySuppliersModule({ section }: { section: DashboardSection }) {
 }
 
 function SuppliersModule({ section }: { section: DashboardSection }) {
+  const { canDelete } = useErpPermissions();
+  const canDeleteSuppliers = canDelete("operations.suppliers");
   const [suppliers, setSuppliers] = useOperationsCollection(loadSuppliers);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingName, setEditingName] = useState<string | null>(null);
@@ -1292,6 +1161,11 @@ function SuppliersModule({ section }: { section: DashboardSection }) {
   }
 
   function handleDeleteSupplier(name: string) {
+    if (!canDeleteSuppliers) {
+      setError("Seu perfil nao pode excluir fornecedores.");
+      return;
+    }
+
     if (!window.confirm(`Excluir o fornecedor ${name}?`)) {
       return;
     }
@@ -1400,7 +1274,9 @@ function SuppliersModule({ section }: { section: DashboardSection }) {
               </div>
               <div className="flex gap-2 text-[var(--accent)]">
                 <button type="button" onClick={() => handleEditSupplier(item)} className="rounded-xl p-2 transition hover:bg-[var(--accent-soft)]">✎</button>
-                <button type="button" onClick={() => handleDeleteSupplier(item.name)} className="rounded-xl p-2 text-rose-500 transition hover:bg-rose-50">✕</button>
+                {canDeleteSuppliers ? (
+                  <button type="button" onClick={() => handleDeleteSupplier(item.name)} className="rounded-xl p-2 text-rose-500 transition hover:bg-rose-50">✕</button>
+                ) : null}
               </div>
             </div>
             <div className="mt-5 space-y-2 text-sm text-[var(--muted-foreground)]">
@@ -1455,6 +1331,8 @@ function LegacyCategoriesModule({ section }: { section: DashboardSection }) {
 }
 
 function CategoriesModule({ section }: { section: DashboardSection }) {
+  const { canDelete } = useErpPermissions();
+  const canDeleteCategories = canDelete("operations.categories");
   const tones = [
     "bg-blue-50 text-blue-600",
     "bg-emerald-50 text-emerald-600",
@@ -1500,6 +1378,11 @@ function CategoriesModule({ section }: { section: DashboardSection }) {
   }
 
   function handleDeleteCategory(name: string) {
+    if (!canDeleteCategories) {
+      setError("Seu perfil nao pode excluir categorias.");
+      return;
+    }
+
     if (!window.confirm(`Excluir a categoria ${name}?`)) {
       return;
     }
@@ -1589,7 +1472,9 @@ function CategoriesModule({ section }: { section: DashboardSection }) {
               <div className={`flex h-16 w-16 items-center justify-center rounded-3xl text-2xl ${tones[index % tones.length]}`}>⌂</div>
               <div className="flex gap-2 text-[var(--accent)]">
                 <button type="button" onClick={() => handleEditCategory(item)} className="rounded-xl p-2 transition hover:bg-[var(--accent-soft)]">✎</button>
-                <button type="button" onClick={() => handleDeleteCategory(item.name)} className="rounded-xl p-2 text-rose-500 transition hover:bg-rose-50">✕</button>
+                {canDeleteCategories ? (
+                  <button type="button" onClick={() => handleDeleteCategory(item.name)} className="rounded-xl p-2 text-rose-500 transition hover:bg-rose-50">✕</button>
+                ) : null}
               </div>
             </div>
             <p className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-[var(--navy-900)]">{item.name}</p>
@@ -1666,40 +1551,6 @@ function LegacyHistoryModule({ section }: { section: DashboardSection }) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function LegacyQualityModule({ section }: { section: DashboardSection }) {
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Quality" />
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard title="Eventos em Aberto" value={String(QUALITY_EVENTS.filter((item) => item.status !== "Liberado").length)} helper="Ocorrências com ação pendente" tone="warning" />
-        <SummaryCard title="Lotes Liberados" value={String(QUALITY_EVENTS.filter((item) => item.status === "Liberado").length)} helper="Pareceres finalizados com liberação" tone="success" />
-        <SummaryCard title="Desvios" value={String(QUALITY_EVENTS.filter((item) => item.status === "Desvio").length)} helper="Casos com tratativa formal" tone="danger" />
-      </div>
-
-      <Panel title="Fila de qualidade" eyebrow="Laboratório">
-        <div className="space-y-4">
-          {QUALITY_EVENTS.map((event) => (
-            <article key={event.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-[var(--foreground)]">{event.title}</p>
-                    <StatusPill label={event.status} tone={toneByLabel(event.status)} />
-                  </div>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">Lote {event.lot} · {event.area}</p>
-                </div>
-                <p className="text-sm text-[var(--muted-foreground)]">Responsável: {event.owner}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </Panel>
-    </section>
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function LegacyPlanningModule({ section }: { section: DashboardSection }) {
   return (
     <section className="space-y-8">
@@ -1733,255 +1584,9 @@ function LegacyPlanningModule({ section }: { section: DashboardSection }) {
   );
 }
 
-function QualityModule({ section }: { section: DashboardSection }) {
-  const [events, setEvents] = useOperationsCollection(loadQualityEvents);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<VersionedQualityEventItem | null>(null);
-  const [error, setError] = useState("");
-  const qualityEventMutation = useErpMutation();
-  const [form, setForm] = useState({
-    title: "",
-    lot: "",
-    area: "",
-    owner: "",
-    status: QUALITY_EVENTS[0]?.status ?? ("Em análise" as QualityEventItem["status"]),
-  });
-  const statusOptions = useMemo(
-    () => Array.from(new Set(QUALITY_EVENTS.map((item) => item.status))) as QualityEventItem["status"][],
-    [],
-  );
-
-  function resetForm() {
-    setForm({
-      title: "",
-      lot: "",
-      area: "",
-      owner: "",
-      status: QUALITY_EVENTS[0]?.status ?? statusOptions[0],
-    });
-    setEditingEvent(null);
-    setError("");
-    qualityEventMutation.resetMutation();
-    setIsFormOpen(false);
-  }
-
-  function handleEditEvent(item: VersionedQualityEventItem) {
-    setForm({
-      title: item.title,
-      lot: item.lot,
-      area: item.area,
-      owner: item.owner,
-      status: item.status,
-    });
-    setEditingEvent(item);
-    setError("");
-    qualityEventMutation.resetMutation();
-    setIsFormOpen(true);
-  }
-
-  async function reloadQualityEventsAfterConflict() {
-    try {
-      setEvents(await refreshQualityEvents());
-    } catch {
-      setEvents(loadQualityEvents());
-    }
-  }
-
-  async function handleDeleteEvent(item: VersionedQualityEventItem) {
-    if (qualityEventMutation.isLoading) {
-      return;
-    }
-
-    if (!item.id || !item.version) {
-      await reloadQualityEventsAfterConflict();
-      setError("Recarreguei os eventos de qualidade. Tente excluir novamente.");
-      return;
-    }
-
-    if (!window.confirm(`Excluir o evento de qualidade "${item.title}"?`)) {
-      return;
-    }
-
-    const eventId = item.id;
-    const baseVersion = item.version;
-    setError("");
-    await qualityEventMutation.runMutation(
-      () => deleteQualityEventRecord(eventId, baseVersion),
-      {
-        fallbackErrorMessage: "Nao foi possivel excluir o evento de qualidade.",
-        conflictMessage: QUALITY_EVENT_CONFLICT_MESSAGE,
-        successMessage: "Evento de qualidade excluido com sucesso.",
-        isVersionConflict: isQualityEventMutationConflict,
-        reloadOnConflict: reloadQualityEventsAfterConflict,
-        getErrorMessage: getQualityEventMutationErrorMessage,
-        onSuccess: () => {
-          setEvents((currentEvents) =>
-            currentEvents.filter((event) => event.id !== eventId),
-          );
-        },
-      },
-    );
-  }
-
-  async function handleSaveEvent() {
-    if (qualityEventMutation.isLoading) {
-      return;
-    }
-
-    if (!form.title.trim() || !form.lot.trim() || !form.area.trim() || !form.owner.trim()) {
-      setError("Preencha titulo, lote, area e responsavel.");
-      return;
-    }
-
-    if (
-      events.some(
-        (item) =>
-          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
-          item.lot.toLowerCase() === form.lot.trim().toLowerCase() &&
-          item.id !== editingEvent?.id,
-      )
-    ) {
-      setError("Ja existe um evento com esse titulo para esse lote.");
-      return;
-    }
-
-    const nextItem: QualityEventItem = {
-      id: editingEvent?.id,
-      title: form.title.trim(),
-      lot: form.lot.trim(),
-      area: form.area.trim(),
-      owner: form.owner.trim(),
-      status: form.status,
-    };
-
-    setError("");
-
-    if (editingEvent) {
-      if (!editingEvent.id || !editingEvent.version) {
-        await reloadQualityEventsAfterConflict();
-        setError("Recarreguei os eventos de qualidade. Tente salvar novamente.");
-        return;
-      }
-
-      const eventId = editingEvent.id;
-      const baseVersion = editingEvent.version;
-      await qualityEventMutation.runMutation(
-        () =>
-          updateQualityEventRecord(
-            eventId,
-            nextItem,
-            baseVersion,
-          ),
-        {
-          fallbackErrorMessage: "Nao foi possivel salvar o evento de qualidade.",
-          conflictMessage: QUALITY_EVENT_CONFLICT_MESSAGE,
-          successMessage: "Evento de qualidade atualizado com sucesso.",
-          isVersionConflict: isQualityEventMutationConflict,
-          reloadOnConflict: reloadQualityEventsAfterConflict,
-          getErrorMessage: getQualityEventMutationErrorMessage,
-          onSuccess: (updatedEvent) => {
-            setEvents((currentEvents) =>
-              currentEvents.map((item) =>
-                item.id === updatedEvent.id ? updatedEvent : item,
-              ),
-            );
-            resetForm();
-          },
-        },
-      );
-      return;
-    }
-
-    await qualityEventMutation.runMutation(
-      () => createQualityEventRecord(nextItem),
-      {
-        fallbackErrorMessage: "Nao foi possivel salvar o evento de qualidade.",
-        conflictMessage: QUALITY_EVENT_CONFLICT_MESSAGE,
-        successMessage: "Evento de qualidade criado com sucesso.",
-        isVersionConflict: isQualityEventMutationConflict,
-        reloadOnConflict: reloadQualityEventsAfterConflict,
-        getErrorMessage: getQualityEventMutationErrorMessage,
-        onSuccess: (createdEvent) => {
-          setEvents((currentEvents) => [
-            createdEvent,
-            ...currentEvents.filter((item) => item.id !== createdEvent.id),
-          ]);
-          resetForm();
-        },
-      },
-    );
-  }
-
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Quality" actions={<ActionButton tone="primary" onClick={() => setIsFormOpen(true)}>Novo evento</ActionButton>} />
-
-      {isFormOpen ? (
-        <InlineFormPanel
-          title={editingEvent ? "Editar evento de qualidade" : "Novo evento de qualidade"}
-          description="Registre liberacoes, reanalises e desvios com acompanhamento local."
-          error={error || qualityEventMutation.error}
-          submitLabel={editingEvent ? "Salvar alteracoes" : "Salvar evento"}
-          onSubmit={handleSaveEvent}
-          onCancel={resetForm}
-        >
-          <div className="grid gap-4 lg:grid-cols-2">
-            <FormField label="Titulo">
-              <TextInput value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Ex.: Reanalise de granulometria" />
-            </FormField>
-            <FormField label="Lote">
-              <TextInput value={form.lot} onChange={(event) => setForm((current) => ({ ...current, lot: event.target.value }))} placeholder="Ex.: PFF310326" />
-            </FormField>
-            <FormField label="Area">
-              <TextInput value={form.area} onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))} placeholder="Ex.: Quality Hold" />
-            </FormField>
-            <FormField label="Responsavel">
-              <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Luciana Prado" />
-            </FormField>
-            <FormField label="Status">
-              <SelectInput value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as QualityEventItem["status"] }))}>
-                {statusOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </SelectInput>
-            </FormField>
-          </div>
-        </InlineFormPanel>
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard title="Eventos em aberto" value={String(events.filter((item) => item.status !== "Liberado").length)} helper="Ocorrencias que ainda pedem acompanhamento" tone="warning" />
-        <SummaryCard title="Lotes liberados" value={String(events.filter((item) => item.status === "Liberado").length)} helper="Pareceres concluidos com liberacao" tone="success" />
-        <SummaryCard title="Desvios" value={String(events.filter((item) => item.status === "Desvio").length)} helper="Casos com tratativa formal" tone="danger" />
-      </div>
-
-      <Panel title="Fila de qualidade" eyebrow="Laboratorio">
-        <div className="space-y-4">
-          {events.map((event) => (
-            <article key={event.id ?? `${event.title}:${event.lot}`} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-[var(--foreground)]">{event.title}</p>
-                    <StatusPill label={event.status} tone={toneByLabel(event.status)} />
-                  </div>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">Lote {event.lot} · {event.area}</p>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">Responsavel: {event.owner}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => handleEditEvent(event)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                  <button type="button" onClick={() => handleDeleteEvent(event)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </Panel>
-    </section>
-  );
-}
-
 function PlanningModule({ section }: { section: DashboardSection }) {
+  const { canDelete } = useErpPermissions();
+  const canDeletePlanning = canDelete("operations.planning");
   const [plans, setPlans] = useOperationsCollection(loadPlanningItems);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState<string | null>(null);
@@ -2025,6 +1630,11 @@ function PlanningModule({ section }: { section: DashboardSection }) {
   }
 
   function handleDeletePlan(route: string) {
+    if (!canDeletePlanning) {
+      setError("Seu perfil nao pode excluir planejamentos.");
+      return;
+    }
+
     if (!window.confirm(`Excluir o planejamento "${route}"?`)) {
       return;
     }
@@ -2132,7 +1742,9 @@ function PlanningModule({ section }: { section: DashboardSection }) {
                 <div className="flex items-center gap-3">
                   <p className="text-lg font-semibold text-[var(--navy-900)]">{formatUnits(item.demand)}</p>
                   <button type="button" onClick={() => handleEditPlan(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                  <button type="button" onClick={() => handleDeletePlan(item.route)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                  {canDeletePlanning ? (
+                    <button type="button" onClick={() => handleDeletePlan(item.route)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                  ) : null}
                 </div>
               </div>
             </article>
@@ -2253,6 +1865,8 @@ function LegacyReportsModule({ section }: { section: DashboardSection }) {
 }
 
 function ReportsModule({ section }: { section: DashboardSection }) {
+  const { canDelete } = useErpPermissions();
+  const canDeleteReports = canDelete("operations.reports");
   const { locations, movements } = useInventoryData();
   const [reports, setReports] = useOperationsCollection(loadReports);
   const [products] = useOperationsCollection(loadProductLines);
@@ -2296,6 +1910,11 @@ function ReportsModule({ section }: { section: DashboardSection }) {
   }
 
   function handleDelete(title: string) {
+    if (!canDeleteReports) {
+      setError("Seu perfil nao pode excluir relatorios.");
+      return;
+    }
+
     if (!window.confirm(`Excluir o relatorio "${title}"?`)) return;
     const nextReports = reports.filter((item) => item.title !== title);
     setReports(nextReports);
@@ -2417,7 +2036,9 @@ function ReportsModule({ section }: { section: DashboardSection }) {
               <div className="flex items-center gap-2">
                 <StatusPill label={item.cadence} tone="bg-[var(--accent-soft)] text-[var(--accent)]" />
                 <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]">Editar</button>
-                <button type="button" onClick={() => handleDelete(item.title)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                {canDeleteReports ? (
+                  <button type="button" onClick={() => handleDelete(item.title)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                ) : null}
               </div>
             </div>
             <div className="mt-5 grid gap-3 text-sm text-[var(--muted-foreground)] sm:grid-cols-2">
@@ -2468,9 +2089,15 @@ function LegacyNotificationsModule({ section }: { section: DashboardSection }) {
 }
 
 function NotificationsModule({ section }: { section: DashboardSection }) {
+  const { canUpdate } = useErpPermissions();
+  const canUpdateNotifications = canUpdate("operations.notifications");
   const [notifications, setNotifications] = useOperationsCollection(loadNotifications);
 
   function handleMarkAllAsRead() {
+    if (!canUpdateNotifications) {
+      return;
+    }
+
     const nextNotifications = notifications.map((item) =>
       item.status === NOTIFICATION_STATUS_DONE ? item : { ...item, status: NOTIFICATION_STATUS_DONE },
     );
@@ -2481,7 +2108,11 @@ function NotificationsModule({ section }: { section: DashboardSection }) {
 
   return (
     <section className="space-y-8">
-      <Hero section={section} eyebrow="Central" actions={<ActionButton onClick={handleMarkAllAsRead}>Marcar tudo como lido</ActionButton>} />
+      <Hero
+        section={section}
+        eyebrow="Central"
+        actions={canUpdateNotifications ? <ActionButton onClick={handleMarkAllAsRead}>Marcar tudo como lido</ActionButton> : null}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Total de Alertas" value={String(notifications.length)} helper="Itens registrados na central operacional" />
@@ -2507,75 +2138,6 @@ function NotificationsModule({ section }: { section: DashboardSection }) {
               </div>
             </article>
           ))}
-        </div>
-      </Panel>
-    </section>
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function LegacyPendingModule({ section }: { section: DashboardSection }) {
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Execução" />
-
-      <Panel title="Painel de pendências" eyebrow="Follow-up">
-        <div className="space-y-4">
-          {PENDING_ITEMS.map((item) => (
-            <article key={item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-[var(--foreground)]">{item.title}</p>
-                    <StatusPill label={item.priority} tone={toneByLabel(item.priority)} />
-                  </div>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.area} · Responsável: {item.owner}</p>
-                </div>
-                <p className="text-sm font-medium text-[var(--navy-900)]">{item.due}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </Panel>
-    </section>
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function LegacyTasksModule({ section }: { section: DashboardSection }) {
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Execução" />
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard title="Tarefas Ativas" value={String(TASKS.filter((item) => item.status !== "Concluída").length)} helper="Fluxos ainda em andamento no dia" />
-        <SummaryCard title="Checklists Concluídos" value={`${TASKS.reduce((sum, item) => sum + item.completed, 0)}`} helper="Itens já executados nas rotinas abertas" />
-        <SummaryCard title="Turnos Monitorados" value={String(new Set(TASKS.map((item) => item.shift)).size)} helper="Cobertura operacional por janela de trabalho" />
-      </div>
-
-      <Panel title="Rotina operacional por turno" eyebrow="Task board">
-        <div className="space-y-4">
-          {TASKS.map((item) => {
-            const percent = (item.completed / item.checklist) * 100;
-
-            return (
-              <article key={item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-[var(--foreground)]">{item.title}</p>
-                      <StatusPill label={item.status} tone={toneByLabel(item.status)} />
-                    </div>
-                    <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.shift} · Responsável: {item.owner}</p>
-                  </div>
-                  <p className="text-sm font-medium text-[var(--navy-900)]">{item.completed}/{item.checklist} etapas</p>
-                </div>
-                <div className="mt-4 h-2.5 rounded-full bg-[var(--panel)]">
-                  <div className={`h-2.5 rounded-full ${item.status === "Concluída" ? "bg-emerald-500" : item.status === "Em execução" ? "bg-[var(--accent)]" : "bg-amber-500"}`} style={{ width: `${Math.max(8, percent)}%` }} />
-                </div>
-              </article>
-            );
-          })}
         </div>
       </Panel>
     </section>
@@ -2631,594 +2193,9 @@ function LegacyCalendarModule({ section }: { section: DashboardSection }) {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function LegacyIncidentsModule({ section }: { section: DashboardSection }) {
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Ocorrências" />
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard title="Incidentes Abertos" value={String(INCIDENTS.filter((item) => item.status !== "Encerrado").length)} helper="Itens que ainda precisam de tratativa" tone="danger" />
-        <SummaryCard title="Severidade Alta" value={String(INCIDENTS.filter((item) => item.severity === "Alta").length)} helper="Ocorrências com maior impacto operacional" tone="danger" />
-        <SummaryCard title="Encerrados" value={String(INCIDENTS.filter((item) => item.status === "Encerrado").length)} helper="Casos concluídos e documentados" tone="success" />
-      </div>
-
-      <Panel title="Registro de incidentes" eyebrow="Tratativa">
-        <div className="space-y-4">
-          {INCIDENTS.map((item) => (
-            <article key={item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-[var(--foreground)]">{item.title}</p>
-                    <StatusPill label={item.severity} tone={toneByLabel(item.severity)} />
-                    <StatusPill label={item.status} tone={toneByLabel(item.status)} />
-                  </div>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.area} · Responsável: {item.owner}</p>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </Panel>
-    </section>
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function LegacyDocumentsModule({ section }: { section: DashboardSection }) {
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Documentação" />
-      <div className="grid gap-4 xl:grid-cols-2">
-        {DOCUMENTS.map((item) => (
-          <article key={item.title} className="rounded-[28px] border border-[var(--panel-border)] bg-[var(--panel)] p-6 shadow-[0_10px_24px_var(--shadow-color)]">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xl font-semibold text-[var(--foreground)]">{item.title}</p>
-              <StatusPill label={item.type} tone="bg-[var(--accent-soft)] text-[var(--accent)]" />
-            </div>
-            <p className="mt-2 text-sm text-[var(--muted-foreground)]">{item.area}</p>
-            <div className="mt-5 grid gap-3 text-sm text-[var(--muted-foreground)] sm:grid-cols-2">
-              <p>Atualizado em: {item.updatedAt}</p>
-              <p>Responsável: {item.owner}</p>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PendingModule({ section }: { section: DashboardSection }) {
-  const [items, setItems] = useOperationsCollection(loadPendingItems);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<VersionedPendingItem | null>(null);
-  const [error, setError] = useState("");
-  const pendingMutation = useErpMutation();
-  const priorityOptions = useMemo(() => Array.from(new Set(PENDING_ITEMS.map((item) => item.priority))) as PendingItem["priority"][], []);
-  const [form, setForm] = useState({
-    title: "",
-    owner: "",
-    area: "",
-    due: "",
-    priority: PENDING_ITEMS[0]?.priority ?? priorityOptions[0],
-  });
-
-  function resetForm() {
-    setForm({
-      title: "",
-      owner: "",
-      area: "",
-      due: "",
-      priority: PENDING_ITEMS[0]?.priority ?? priorityOptions[0],
-    });
-    setEditingItem(null);
-    setError("");
-    pendingMutation.resetMutation();
-    setIsFormOpen(false);
-  }
-
-  function handleEdit(item: VersionedPendingItem) {
-    setForm({ ...item });
-    setEditingItem(item);
-    setError("");
-    pendingMutation.resetMutation();
-    setIsFormOpen(true);
-  }
-
-  async function reloadPendingItemsAfterConflict() {
-    try {
-      setItems(await refreshPendingItems());
-    } catch {
-      setItems(loadPendingItems());
-    }
-  }
-
-  async function handleDelete(item: VersionedPendingItem) {
-    if (pendingMutation.isLoading) {
-      return;
-    }
-
-    if (!item.id || !item.version) {
-      await reloadPendingItemsAfterConflict();
-      setError("Recarreguei as pendencias. Tente excluir novamente.");
-      return;
-    }
-
-    if (!window.confirm(`Excluir a pendencia "${item.title}"?`)) return;
-
-    const pendingId = item.id;
-    const baseVersion = item.version;
-    setError("");
-    await pendingMutation.runMutation(
-      () => deletePendingItemRecord(pendingId, baseVersion),
-      {
-        fallbackErrorMessage: "Nao foi possivel excluir a pendencia.",
-        conflictMessage: PENDING_CONFLICT_MESSAGE,
-        isVersionConflict: isPendingMutationConflict,
-        reloadOnConflict: reloadPendingItemsAfterConflict,
-        getErrorMessage: getPendingMutationErrorMessage,
-        onSuccess: () => {
-          setItems((currentItems) =>
-            currentItems.filter((currentItem) => currentItem.id !== pendingId),
-          );
-        },
-      },
-    );
-  }
-
-  async function handleSave() {
-    if (pendingMutation.isLoading) {
-      return;
-    }
-
-    if (!form.title.trim() || !form.owner.trim() || !form.area.trim() || !form.due.trim()) {
-      setError("Preencha titulo, responsavel, area e prazo.");
-      return;
-    }
-
-    if (
-      items.some(
-        (item) =>
-          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
-          item.id !== editingItem?.id,
-      )
-    ) {
-      setError("Ja existe uma pendencia com esse titulo.");
-      return;
-    }
-
-    const nextItem: PendingItem = {
-      title: form.title.trim(),
-      owner: form.owner.trim(),
-      area: form.area.trim(),
-      due: form.due.trim(),
-      priority: form.priority,
-    };
-
-    setError("");
-
-    if (editingItem) {
-      if (!editingItem.id || !editingItem.version) {
-        await reloadPendingItemsAfterConflict();
-        setError("Recarreguei as pendencias. Tente salvar novamente.");
-        return;
-      }
-
-      const pendingId = editingItem.id;
-      const baseVersion = editingItem.version;
-      await pendingMutation.runMutation(
-        () => updatePendingItemRecord(pendingId, nextItem, baseVersion),
-        {
-          fallbackErrorMessage: "Nao foi possivel salvar a pendencia.",
-          conflictMessage: PENDING_CONFLICT_MESSAGE,
-          isVersionConflict: isPendingMutationConflict,
-          reloadOnConflict: reloadPendingItemsAfterConflict,
-          getErrorMessage: getPendingMutationErrorMessage,
-          onSuccess: (updatedItem) => {
-            setItems((currentItems) =>
-              currentItems.map((item) =>
-                item.id === updatedItem.id ? updatedItem : item,
-              ),
-            );
-            resetForm();
-          },
-        },
-      );
-      return;
-    }
-
-    await pendingMutation.runMutation(
-      () => createPendingItemRecord(nextItem),
-      {
-        fallbackErrorMessage: "Nao foi possivel salvar a pendencia.",
-        conflictMessage: PENDING_CONFLICT_MESSAGE,
-        isVersionConflict: isPendingMutationConflict,
-        reloadOnConflict: reloadPendingItemsAfterConflict,
-        getErrorMessage: getPendingMutationErrorMessage,
-        onSuccess: (createdItem) => {
-          setItems((currentItems) => [
-            createdItem,
-            ...currentItems.filter((item) => item.id !== createdItem.id),
-          ]);
-          resetForm();
-        },
-      },
-    );
-  }
-
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Execucao" actions={<ActionButton tone="primary" onClick={() => setIsFormOpen(true)}>Nova pendencia</ActionButton>} />
-
-      {isFormOpen ? (
-        <InlineFormPanel
-          title={editingItem ? "Editar pendencia" : "Nova pendencia"}
-          description="Controle os itens que ainda dependem de acao operacional."
-          error={error || pendingMutation.error}
-          submitLabel={editingItem ? "Salvar alteracoes" : "Salvar pendencia"}
-          onSubmit={handleSave}
-          onCancel={resetForm}
-        >
-          <div className="grid gap-4 lg:grid-cols-2">
-            <FormField label="Titulo">
-              <TextInput value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Ex.: Confirmar recebimento do TRF" />
-            </FormField>
-            <FormField label="Responsavel">
-              <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Carlos Menezes" />
-            </FormField>
-            <FormField label="Area">
-              <TextInput value={form.area} onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))} placeholder="Ex.: CD Sudeste" />
-            </FormField>
-            <FormField label="Prazo">
-              <TextInput value={form.due} onChange={(event) => setForm((current) => ({ ...current, due: event.target.value }))} placeholder="Ex.: Hoje, 17:30" />
-            </FormField>
-            <FormField label="Prioridade">
-              <SelectInput value={form.priority} onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value as PendingItem["priority"] }))}>
-                {priorityOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </SelectInput>
-            </FormField>
-          </div>
-        </InlineFormPanel>
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard title="Pendencias abertas" value={String(items.length)} helper="Itens aguardando algum tipo de follow-up" />
-        <SummaryCard title="Alta prioridade" value={String(items.filter((item) => item.priority === "Alta").length)} helper="Demandam acao mais imediata" tone="danger" />
-        <SummaryCard title="Demais itens" value={String(items.filter((item) => item.priority !== "Alta").length)} helper="Pendencias em acompanhamento" tone="warning" />
-      </div>
-
-      <Panel title="Painel de pendencias" eyebrow="Follow-up">
-        <div className="space-y-4">
-          {items.map((item) => (
-            <article key={item.id ?? item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-[var(--foreground)]">{item.title}</p>
-                    <StatusPill label={item.priority} tone={toneByLabel(item.priority)} />
-                  </div>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.area} · Responsavel: {item.owner}</p>
-                  <p className="mt-1 text-sm font-medium text-[var(--navy-900)]">{item.due}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                  <button type="button" onClick={() => void handleDelete(item)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </Panel>
-    </section>
-  );
-}
-
-function TasksModule({ section }: { section: DashboardSection }) {
-  const [tasks, setTasks] = useOperationsCollection(loadTasks);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<VersionedTaskItem | null>(null);
-  const [error, setError] = useState("");
-  const taskMutation = useErpMutation();
-  const statusOptions = useMemo(() => Array.from(new Set(TASKS.map((item) => item.status))) as TaskItem["status"][], []);
-  const waitingStatus = useMemo(() => statusOptions.find((item) => normalizeText(item).includes("aguard")) ?? statusOptions[0], [statusOptions]);
-  const runningStatus = useMemo(() => statusOptions.find((item) => normalizeText(item).includes("execu")) ?? statusOptions[0], [statusOptions]);
-  const doneStatus = useMemo(() => statusOptions.find((item) => normalizeText(item).includes("conclu")) ?? statusOptions[0], [statusOptions]);
-  const [form, setForm] = useState({
-    title: "",
-    shift: "",
-    owner: "",
-    checklist: "",
-    completed: "",
-    status: TASKS[0]?.status ?? statusOptions[0],
-  });
-
-  function resolveTaskStatus(completed: number, checklist: number): TaskItem["status"] {
-    if (completed >= checklist) return doneStatus;
-    if (completed > 0) return runningStatus;
-    return waitingStatus;
-  }
-
-  function resetForm() {
-    setForm({
-      title: "",
-      shift: "",
-      owner: "",
-      checklist: "",
-      completed: "",
-      status: TASKS[0]?.status ?? statusOptions[0],
-    });
-    setEditingTask(null);
-    setError("");
-    taskMutation.resetMutation();
-    setIsFormOpen(false);
-  }
-
-  function handleEdit(item: VersionedTaskItem) {
-    setForm({
-      title: item.title,
-      shift: item.shift,
-      owner: item.owner,
-      checklist: String(item.checklist),
-      completed: String(item.completed),
-      status: item.status,
-    });
-    setEditingTask(item);
-    setError("");
-    taskMutation.resetMutation();
-    setIsFormOpen(true);
-  }
-
-  async function reloadTasksAfterConflict() {
-    try {
-      setTasks(await refreshTasks());
-    } catch {
-      setTasks(loadTasks());
-    }
-  }
-
-  async function handleDelete(item: VersionedTaskItem) {
-    if (taskMutation.isLoading) {
-      return;
-    }
-
-    if (!item.id || !item.version) {
-      await reloadTasksAfterConflict();
-      setError("Recarreguei as tarefas. Tente excluir novamente.");
-      return;
-    }
-
-    if (!window.confirm(`Excluir a tarefa "${item.title}"?`)) return;
-
-    const taskId = item.id;
-    const baseVersion = item.version;
-    setError("");
-    await taskMutation.runMutation(
-      () => deleteTaskRecord(taskId, baseVersion),
-      {
-        fallbackErrorMessage: "Nao foi possivel excluir a tarefa.",
-        conflictMessage: TASK_CONFLICT_MESSAGE,
-        isVersionConflict: isTaskMutationConflict,
-        reloadOnConflict: reloadTasksAfterConflict,
-        getErrorMessage: getTaskMutationErrorMessage,
-        onSuccess: () => {
-          setTasks((currentTasks) =>
-            currentTasks.filter((task) => task.id !== taskId),
-          );
-        },
-      },
-    );
-  }
-
-  async function handleAdvance(item: VersionedTaskItem) {
-    if (taskMutation.isLoading) {
-      return;
-    }
-
-    if (!item.id || !item.version) {
-      await reloadTasksAfterConflict();
-      setError("Recarreguei as tarefas. Tente avancar novamente.");
-      return;
-    }
-
-    const completed = Math.min(item.checklist, item.completed + 1);
-    const nextItem: Partial<TaskItem> = {
-      completed,
-      status: resolveTaskStatus(completed, item.checklist),
-    };
-    const taskId = item.id;
-    const baseVersion = item.version;
-    setError("");
-    await taskMutation.runMutation(
-      () => updateTaskRecord(taskId, nextItem, baseVersion),
-      {
-        fallbackErrorMessage: "Nao foi possivel avancar a tarefa.",
-        conflictMessage: TASK_CONFLICT_MESSAGE,
-        isVersionConflict: isTaskMutationConflict,
-        reloadOnConflict: reloadTasksAfterConflict,
-        getErrorMessage: getTaskMutationErrorMessage,
-        onSuccess: (updatedTask) => {
-          setTasks((currentTasks) =>
-            currentTasks.map((task) =>
-              task.id === updatedTask.id ? updatedTask : task,
-            ),
-          );
-        },
-      },
-    );
-  }
-
-  async function handleSave() {
-    if (taskMutation.isLoading) {
-      return;
-    }
-
-    const checklist = Number(form.checklist);
-    const completedRaw = Number(form.completed);
-
-    if (!form.title.trim() || !form.shift.trim() || !form.owner.trim()) {
-      setError("Preencha titulo, turno e responsavel.");
-      return;
-    }
-
-    if ([checklist, completedRaw].some((value) => Number.isNaN(value) || value < 0)) {
-      setError("Informe checklist e concluido com numeros validos.");
-      return;
-    }
-
-    if (completedRaw > checklist) {
-      setError("Concluido nao pode ser maior que o checklist.");
-      return;
-    }
-
-    if (
-      tasks.some(
-        (item) =>
-          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
-          item.id !== editingTask?.id,
-      )
-    ) {
-      setError("Ja existe uma tarefa com esse titulo.");
-      return;
-    }
-
-    const completed = Math.min(checklist, completedRaw);
-    const nextItem: TaskItem = {
-      title: form.title.trim(),
-      shift: form.shift.trim(),
-      owner: form.owner.trim(),
-      checklist,
-      completed,
-      status: resolveTaskStatus(completed, checklist),
-    };
-
-    setError("");
-
-    if (editingTask) {
-      if (!editingTask.id || !editingTask.version) {
-        await reloadTasksAfterConflict();
-        setError("Recarreguei as tarefas. Tente salvar novamente.");
-        return;
-      }
-
-      const taskId = editingTask.id;
-      const baseVersion = editingTask.version;
-      await taskMutation.runMutation(
-        () => updateTaskRecord(taskId, nextItem, baseVersion),
-        {
-          fallbackErrorMessage: "Nao foi possivel salvar a tarefa.",
-          conflictMessage: TASK_CONFLICT_MESSAGE,
-          isVersionConflict: isTaskMutationConflict,
-          reloadOnConflict: reloadTasksAfterConflict,
-          getErrorMessage: getTaskMutationErrorMessage,
-          onSuccess: (updatedTask) => {
-            setTasks((currentTasks) =>
-              currentTasks.map((item) =>
-                item.id === updatedTask.id ? updatedTask : item,
-              ),
-            );
-            resetForm();
-          },
-        },
-      );
-      return;
-    }
-
-    await taskMutation.runMutation(
-      () => createTaskRecord(nextItem),
-      {
-        fallbackErrorMessage: "Nao foi possivel salvar a tarefa.",
-        conflictMessage: TASK_CONFLICT_MESSAGE,
-        isVersionConflict: isTaskMutationConflict,
-        reloadOnConflict: reloadTasksAfterConflict,
-        getErrorMessage: getTaskMutationErrorMessage,
-        onSuccess: (createdTask) => {
-          setTasks((currentTasks) => [
-            createdTask,
-            ...currentTasks.filter((item) => item.id !== createdTask.id),
-          ]);
-          resetForm();
-        },
-      },
-    );
-  }
-
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Execucao" actions={<ActionButton tone="primary" onClick={() => setIsFormOpen(true)}>Nova tarefa</ActionButton>} />
-
-      {isFormOpen ? (
-        <InlineFormPanel
-          title={editingTask ? "Editar tarefa" : "Nova tarefa"}
-          description="Organize a rotina por turno e acompanhe o progresso das checklists."
-          error={error || taskMutation.error}
-          submitLabel={editingTask ? "Salvar alteracoes" : "Salvar tarefa"}
-          onSubmit={handleSave}
-          onCancel={resetForm}
-        >
-          <div className="grid gap-4 lg:grid-cols-2">
-            <FormField label="Titulo">
-              <TextInput value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Ex.: Conferencia de pallets" />
-            </FormField>
-            <FormField label="Turno">
-              <TextInput value={form.shift} onChange={(event) => setForm((current) => ({ ...current, shift: event.target.value }))} placeholder="Ex.: Turno A" />
-            </FormField>
-            <FormField label="Responsavel">
-              <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Diego Paiva" />
-            </FormField>
-            <FormField label="Checklist">
-              <TextInput value={form.checklist} onChange={(event) => setForm((current) => ({ ...current, checklist: event.target.value }))} inputMode="numeric" placeholder="Ex.: 8" />
-            </FormField>
-            <FormField label="Concluido">
-              <TextInput value={form.completed} onChange={(event) => setForm((current) => ({ ...current, completed: event.target.value }))} inputMode="numeric" placeholder="Ex.: 5" />
-            </FormField>
-          </div>
-        </InlineFormPanel>
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard title="Tarefas ativas" value={String(tasks.filter((item) => item.status !== doneStatus).length)} helper="Fluxos ainda em andamento no dia" />
-        <SummaryCard title="Checklists concluidos" value={`${tasks.reduce((sum, item) => sum + item.completed, 0)}`} helper="Itens ja executados nas rotinas abertas" />
-        <SummaryCard title="Turnos monitorados" value={String(new Set(tasks.map((item) => item.shift)).size)} helper="Cobertura operacional por janela de trabalho" />
-      </div>
-
-      <Panel title="Rotina operacional por turno" eyebrow="Task board">
-        <div className="space-y-4">
-          {tasks.map((item) => {
-            const percent = item.checklist > 0 ? (item.completed / item.checklist) * 100 : 0;
-
-            return (
-              <article key={item.id ?? item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-[var(--foreground)]">{item.title}</p>
-                      <StatusPill label={item.status} tone={toneByLabel(item.status)} />
-                    </div>
-                    <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.shift} · Responsavel: {item.owner}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium text-[var(--navy-900)]">{item.completed}/{item.checklist} etapas</p>
-                    <button type="button" onClick={() => void handleAdvance(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Avancar</button>
-                    <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                    <button type="button" onClick={() => void handleDelete(item)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
-                  </div>
-                </div>
-                <div className="mt-4 h-2.5 rounded-full bg-[var(--panel)]">
-                  <div className={`h-2.5 rounded-full ${item.status === doneStatus ? "bg-emerald-500" : item.status === runningStatus ? "bg-[var(--accent)]" : "bg-amber-500"}`} style={{ width: `${Math.max(8, percent)}%` }} />
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </Panel>
-    </section>
-  );
-}
-
 function DistributorsModule({ section }: { section: DashboardSection }) {
+  const { canDelete } = useErpPermissions();
+  const canDeleteDistributors = canDelete("operations.distributors");
   const [distributors, setDistributors] = useOperationsCollection(loadDistributors);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingName, setEditingName] = useState<string | null>(null);
@@ -3273,6 +2250,11 @@ function DistributorsModule({ section }: { section: DashboardSection }) {
   }
 
   function handleDelete(name: string) {
+    if (!canDeleteDistributors) {
+      setError("Seu perfil nao pode excluir distribuidores.");
+      return;
+    }
+
     if (!window.confirm(`Excluir o distribuidor "${name}"?`)) return;
     const nextDistributors = distributors.filter((item) => item.name !== name);
     setDistributors(nextDistributors);
@@ -3374,7 +2356,9 @@ function DistributorsModule({ section }: { section: DashboardSection }) {
               </div>
               <div className="flex gap-2">
                 <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]">Editar</button>
-                <button type="button" onClick={() => handleDelete(item.name)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                {canDeleteDistributors ? (
+                  <button type="button" onClick={() => handleDelete(item.name)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                ) : null}
               </div>
             </div>
             <p className="mt-2 text-sm text-[var(--muted-foreground)]">{item.region} · {item.channel}</p>
@@ -3387,6 +2371,8 @@ function DistributorsModule({ section }: { section: DashboardSection }) {
 }
 
 function CalendarModule({ section }: { section: DashboardSection }) {
+  const { canDelete } = useErpPermissions();
+  const canDeleteCalendarEvents = canDelete("operations.calendar");
   const [events, setEvents] = useOperationsCollection(loadCalendarEvents);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
@@ -3427,6 +2413,11 @@ function CalendarModule({ section }: { section: DashboardSection }) {
   }
 
   function handleDelete(title: string) {
+    if (!canDeleteCalendarEvents) {
+      setError("Seu perfil nao pode excluir eventos do calendario.");
+      return;
+    }
+
     if (!window.confirm(`Excluir o evento "${title}"?`)) return;
     const nextEvents = events.filter((item) => item.title !== title);
     setEvents(nextEvents);
@@ -3514,525 +2505,15 @@ function CalendarModule({ section }: { section: DashboardSection }) {
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium text-[var(--navy-900)]">{event.slot}</p>
                   <button type="button" onClick={() => handleEdit(event)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                  <button type="button" onClick={() => handleDelete(event.title)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                  {canDeleteCalendarEvents ? (
+                    <button type="button" onClick={() => handleDelete(event.title)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
+                  ) : null}
                 </div>
               </div>
             </article>
           ))}
         </div>
       </Panel>
-    </section>
-  );
-}
-
-function IncidentsModule({ section }: { section: DashboardSection }) {
-  const [incidents, setIncidents] = useOperationsCollection(loadIncidents);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingIncident, setEditingIncident] = useState<VersionedIncidentItem | null>(null);
-  const [error, setError] = useState("");
-  const incidentMutation = useErpMutation();
-  const severityOptions = useMemo(
-    () => Array.from(new Set(INCIDENTS.map((item) => item.severity))) as IncidentItem["severity"][],
-    [],
-  );
-  const statusOptions = useMemo(
-    () => Array.from(new Set(INCIDENTS.map((item) => item.status))) as IncidentItem["status"][],
-    [],
-  );
-  const closedStatus = useMemo(
-    () => statusOptions.find((item) => normalizeText(item).includes("encerr")) ?? statusOptions[statusOptions.length - 1],
-    [statusOptions],
-  );
-  const [form, setForm] = useState({
-    title: "",
-    area: "",
-    severity: INCIDENTS[0]?.severity ?? ("Alta" as IncidentItem["severity"]),
-    owner: "",
-    status: INCIDENTS[0]?.status ?? ("Aberto" as IncidentItem["status"]),
-  });
-
-  function resetForm() {
-    setForm({
-      title: "",
-      area: "",
-      severity: INCIDENTS[0]?.severity ?? severityOptions[0],
-      owner: "",
-      status: INCIDENTS[0]?.status ?? statusOptions[0],
-    });
-    setEditingIncident(null);
-    setError("");
-    incidentMutation.resetMutation();
-    setIsFormOpen(false);
-  }
-
-  function handleEdit(item: VersionedIncidentItem) {
-    setForm({
-      title: item.title,
-      area: item.area,
-      severity: item.severity,
-      owner: item.owner,
-      status: item.status,
-    });
-    setEditingIncident(item);
-    setError("");
-    incidentMutation.resetMutation();
-    setIsFormOpen(true);
-  }
-
-  async function reloadIncidentsAfterConflict() {
-    try {
-      setIncidents(await refreshIncidents());
-    } catch {
-      setIncidents(loadIncidents());
-    }
-  }
-
-  async function handleDelete(item: VersionedIncidentItem) {
-    if (incidentMutation.isLoading) {
-      return;
-    }
-
-    if (!item.id || !item.version) {
-      await reloadIncidentsAfterConflict();
-      setError("Recarreguei os incidentes. Tente excluir novamente.");
-      return;
-    }
-
-    if (!window.confirm(`Excluir o incidente "${item.title}"?`)) return;
-
-    const incidentId = item.id;
-    const baseVersion = item.version;
-    setError("");
-    await incidentMutation.runMutation(
-      () => deleteIncidentRecord(incidentId, baseVersion),
-      {
-        fallbackErrorMessage: "Nao foi possivel excluir o incidente.",
-        conflictMessage: INCIDENT_CONFLICT_MESSAGE,
-        isVersionConflict: isIncidentMutationConflict,
-        reloadOnConflict: reloadIncidentsAfterConflict,
-        getErrorMessage: getIncidentMutationErrorMessage,
-        onSuccess: () => {
-          setIncidents((currentIncidents) =>
-            currentIncidents.filter((incident) => incident.id !== incidentId),
-          );
-        },
-      },
-    );
-  }
-
-  async function handleClose(item: VersionedIncidentItem) {
-    if (incidentMutation.isLoading) {
-      return;
-    }
-
-    if (!item.id || !item.version) {
-      await reloadIncidentsAfterConflict();
-      setError("Recarreguei os incidentes. Tente encerrar novamente.");
-      return;
-    }
-
-    const incidentId = item.id;
-    const baseVersion = item.version;
-    setError("");
-    await incidentMutation.runMutation(
-      () => updateIncidentRecord(incidentId, { status: closedStatus }, baseVersion),
-      {
-        fallbackErrorMessage: "Nao foi possivel encerrar o incidente.",
-        conflictMessage: INCIDENT_CONFLICT_MESSAGE,
-        isVersionConflict: isIncidentMutationConflict,
-        reloadOnConflict: reloadIncidentsAfterConflict,
-        getErrorMessage: getIncidentMutationErrorMessage,
-        onSuccess: (updatedIncident) => {
-          setIncidents((currentIncidents) =>
-            currentIncidents.map((incident) =>
-              incident.id === updatedIncident.id ? updatedIncident : incident,
-            ),
-          );
-        },
-      },
-    );
-  }
-
-  async function handleSave() {
-    if (incidentMutation.isLoading) {
-      return;
-    }
-
-    if (!form.title.trim() || !form.area.trim() || !form.owner.trim()) {
-      setError("Preencha titulo, area e responsavel.");
-      return;
-    }
-
-    if (
-      incidents.some(
-        (item) =>
-          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
-          item.id !== editingIncident?.id,
-      )
-    ) {
-      setError("Ja existe um incidente com esse titulo.");
-      return;
-    }
-
-    const nextItem: IncidentItem = {
-      id: editingIncident?.id,
-      title: form.title.trim(),
-      area: form.area.trim(),
-      severity: form.severity,
-      owner: form.owner.trim(),
-      status: form.status,
-    };
-
-    setError("");
-
-    if (editingIncident) {
-      if (!editingIncident.id || !editingIncident.version) {
-        await reloadIncidentsAfterConflict();
-        setError("Recarreguei os incidentes. Tente salvar novamente.");
-        return;
-      }
-
-      const incidentId = editingIncident.id;
-      const baseVersion = editingIncident.version;
-      await incidentMutation.runMutation(
-        () => updateIncidentRecord(incidentId, nextItem, baseVersion),
-        {
-          fallbackErrorMessage: "Nao foi possivel salvar o incidente.",
-          conflictMessage: INCIDENT_CONFLICT_MESSAGE,
-          isVersionConflict: isIncidentMutationConflict,
-          reloadOnConflict: reloadIncidentsAfterConflict,
-          getErrorMessage: getIncidentMutationErrorMessage,
-          onSuccess: (updatedIncident) => {
-            setIncidents((currentIncidents) =>
-              currentIncidents.map((item) =>
-                item.id === updatedIncident.id ? updatedIncident : item,
-              ),
-            );
-            resetForm();
-          },
-        },
-      );
-      return;
-    }
-
-    await incidentMutation.runMutation(
-      () => createIncidentRecord(nextItem),
-      {
-        fallbackErrorMessage: "Nao foi possivel salvar o incidente.",
-        conflictMessage: INCIDENT_CONFLICT_MESSAGE,
-        isVersionConflict: isIncidentMutationConflict,
-        reloadOnConflict: reloadIncidentsAfterConflict,
-        getErrorMessage: getIncidentMutationErrorMessage,
-        onSuccess: (createdIncident) => {
-          setIncidents((currentIncidents) => [
-            createdIncident,
-            ...currentIncidents.filter((item) => item.id !== createdIncident.id),
-          ]);
-          resetForm();
-        },
-      },
-    );
-  }
-
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Ocorrencias" actions={<ActionButton tone="primary" onClick={() => setIsFormOpen(true)}>Novo incidente</ActionButton>} />
-
-      {isFormOpen ? (
-        <InlineFormPanel
-          title={editingIncident ? "Editar incidente" : "Novo incidente"}
-          description="Registre ocorrencias, nivel de severidade e o dono da tratativa para a operacao."
-          error={error || incidentMutation.error}
-          submitLabel={editingIncident ? "Salvar alteracoes" : "Salvar incidente"}
-          onSubmit={handleSave}
-          onCancel={resetForm}
-        >
-          <div className="grid gap-4 lg:grid-cols-2">
-            <FormField label="Titulo">
-              <TextInput value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Ex.: Divergencia de embalagem secundaria" />
-            </FormField>
-            <FormField label="Area">
-              <TextInput value={form.area} onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))} placeholder="Ex.: Qualidade" />
-            </FormField>
-            <FormField label="Severidade">
-              <SelectInput value={form.severity} onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value as IncidentItem["severity"] }))}>
-                {severityOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </SelectInput>
-            </FormField>
-            <FormField label="Responsavel">
-              <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Marina Azevedo" />
-            </FormField>
-            <FormField label="Status">
-              <SelectInput value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as IncidentItem["status"] }))}>
-                {statusOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </SelectInput>
-            </FormField>
-          </div>
-        </InlineFormPanel>
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard title="Incidentes abertos" value={String(incidents.filter((item) => item.status !== closedStatus).length)} helper="Casos que ainda precisam de tratativa" tone="danger" />
-        <SummaryCard title="Severidade alta" value={String(incidents.filter((item) => item.severity === "Alta").length)} helper="Ocorrencias com maior impacto operacional" tone="danger" />
-        <SummaryCard title="Encerrados" value={String(incidents.filter((item) => item.status === closedStatus).length)} helper="Casos fechados e rastreados no sistema" tone="success" />
-      </div>
-
-      <Panel title="Registro de incidentes" eyebrow="Tratativa">
-        <div className="space-y-4">
-          {incidents.map((item) => (
-            <article key={item.id ?? item.title} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-[var(--foreground)]">{item.title}</p>
-                    <StatusPill label={item.severity} tone={toneByLabel(item.severity)} />
-                    <StatusPill label={item.status} tone={toneByLabel(item.status)} />
-                  </div>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.area} · Responsavel: {item.owner}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => void handleClose(item)} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">Encerrar</button>
-                  <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
-                  <button type="button" onClick={() => void handleDelete(item)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </Panel>
-    </section>
-  );
-}
-
-function DocumentsModule({ section }: { section: DashboardSection }) {
-  const [documents, setDocuments] = useOperationsCollection(loadDocuments);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingDocument, setEditingDocument] = useState<VersionedDocumentItem | null>(null);
-  const [error, setError] = useState("");
-  const documentMutation = useErpMutation();
-  const [form, setForm] = useState({
-    title: "",
-    type: "",
-    area: "",
-    updatedAt: "",
-    owner: "",
-  });
-
-  function resetForm() {
-    setForm({
-      title: "",
-      type: "",
-      area: "",
-      updatedAt: "",
-      owner: "",
-    });
-    setEditingDocument(null);
-    setError("");
-    documentMutation.resetMutation();
-    setIsFormOpen(false);
-  }
-
-  function handleEdit(item: VersionedDocumentItem) {
-    setForm({
-      title: item.title,
-      type: item.type,
-      area: item.area,
-      updatedAt: item.updatedAt,
-      owner: item.owner,
-    });
-    setEditingDocument(item);
-    setError("");
-    documentMutation.resetMutation();
-    setIsFormOpen(true);
-  }
-
-  async function reloadDocumentsAfterConflict() {
-    try {
-      setDocuments(await refreshDocuments());
-    } catch {
-      setDocuments(loadDocuments());
-    }
-  }
-
-  async function handleDelete(item: VersionedDocumentItem) {
-    if (documentMutation.isLoading) {
-      return;
-    }
-
-    if (!item.id || !item.version) {
-      await reloadDocumentsAfterConflict();
-      setError("Recarreguei os documentos. Tente excluir novamente.");
-      return;
-    }
-
-    if (!window.confirm(`Excluir o documento "${item.title}"?`)) return;
-
-    const documentId = item.id;
-    const baseVersion = item.version;
-    setError("");
-    await documentMutation.runMutation(
-      () => deleteDocumentRecord(documentId, baseVersion),
-      {
-        fallbackErrorMessage: "Nao foi possivel excluir o documento.",
-        conflictMessage: DOCUMENT_CONFLICT_MESSAGE,
-        isVersionConflict: isDocumentMutationConflict,
-        reloadOnConflict: reloadDocumentsAfterConflict,
-        getErrorMessage: getDocumentMutationErrorMessage,
-        onSuccess: () => {
-          setDocuments((currentDocuments) =>
-            currentDocuments.filter((document) => document.id !== documentId),
-          );
-        },
-      },
-    );
-  }
-
-  async function handleSave() {
-    if (documentMutation.isLoading) {
-      return;
-    }
-
-    if (!form.title.trim() || !form.type.trim() || !form.area.trim() || !form.owner.trim()) {
-      setError("Preencha titulo, tipo, area e responsavel.");
-      return;
-    }
-
-    if (
-      documents.some(
-        (item) =>
-          item.title.toLowerCase() === form.title.trim().toLowerCase() &&
-          item.id !== editingDocument?.id,
-      )
-    ) {
-      setError("Ja existe um documento com esse titulo.");
-      return;
-    }
-
-    const nextItem: DocumentItem = {
-      title: form.title.trim(),
-      type: form.type.trim(),
-      area: form.area.trim(),
-      updatedAt: form.updatedAt.trim() || "Atualizado agora",
-      owner: form.owner.trim(),
-    };
-
-    setError("");
-
-    if (editingDocument) {
-      if (!editingDocument.id || !editingDocument.version) {
-        await reloadDocumentsAfterConflict();
-        setError("Recarreguei os documentos. Tente salvar novamente.");
-        return;
-      }
-
-      const documentId = editingDocument.id;
-      const baseVersion = editingDocument.version;
-      await documentMutation.runMutation(
-        () => updateDocumentRecord(documentId, nextItem, baseVersion),
-        {
-          fallbackErrorMessage: "Nao foi possivel salvar o documento.",
-          conflictMessage: DOCUMENT_CONFLICT_MESSAGE,
-          isVersionConflict: isDocumentMutationConflict,
-          reloadOnConflict: reloadDocumentsAfterConflict,
-          getErrorMessage: getDocumentMutationErrorMessage,
-          onSuccess: (updatedDocument) => {
-            setDocuments((currentDocuments) =>
-              currentDocuments.map((item) =>
-                item.id === updatedDocument.id ? updatedDocument : item,
-              ),
-            );
-            resetForm();
-          },
-        },
-      );
-      return;
-    }
-
-    await documentMutation.runMutation(
-      () => createDocumentRecord(nextItem),
-      {
-        fallbackErrorMessage: "Nao foi possivel salvar o documento.",
-        conflictMessage: DOCUMENT_CONFLICT_MESSAGE,
-        isVersionConflict: isDocumentMutationConflict,
-        reloadOnConflict: reloadDocumentsAfterConflict,
-        getErrorMessage: getDocumentMutationErrorMessage,
-        onSuccess: (createdDocument) => {
-          setDocuments((currentDocuments) => [
-            createdDocument,
-            ...currentDocuments.filter((item) => item.id !== createdDocument.id),
-          ]);
-          resetForm();
-        },
-      },
-    );
-  }
-
-  return (
-    <section className="space-y-8">
-      <Hero section={section} eyebrow="Documentacao" actions={<ActionButton tone="primary" onClick={() => setIsFormOpen(true)}>Novo documento</ActionButton>} />
-
-      {isFormOpen ? (
-        <InlineFormPanel
-          title={editingDocument ? "Editar documento" : "Novo documento"}
-          description="Cadastre laudos, comprovantes e checklists com ownership claro para a operacao."
-          error={error || documentMutation.error}
-          submitLabel={editingDocument ? "Salvar alteracoes" : "Salvar documento"}
-          onSubmit={() => {
-            void handleSave();
-          }}
-          onCancel={resetForm}
-        >
-          <div className="grid gap-4 lg:grid-cols-2">
-            <FormField label="Titulo">
-              <TextInput value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Ex.: Laudo microbiologico do lote PFM260327" />
-            </FormField>
-            <FormField label="Tipo">
-              <TextInput value={form.type} onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))} placeholder="Ex.: Laudo" />
-            </FormField>
-            <FormField label="Area">
-              <TextInput value={form.area} onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))} placeholder="Ex.: Qualidade" />
-            </FormField>
-            <FormField label="Atualizado em">
-              <TextInput value={form.updatedAt} onChange={(event) => setForm((current) => ({ ...current, updatedAt: event.target.value }))} placeholder="Ex.: Hoje, 10:30" />
-            </FormField>
-            <FormField label="Responsavel">
-              <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Tatiane Freitas" />
-            </FormField>
-          </div>
-        </InlineFormPanel>
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard title="Documentos ativos" value={String(documents.length)} helper="Arquivos e evidencias registrados na operacao" />
-        <SummaryCard title="Areas documentadas" value={String(new Set(documents.map((item) => item.area)).size)} helper="Setores com rastreabilidade disponivel" />
-        <SummaryCard title="Tipos diferentes" value={String(new Set(documents.map((item) => item.type)).size)} helper="Variedade de artefatos cadastrados" />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        {documents.map((item) => (
-          <article key={item.id ?? item.title} className="rounded-[28px] border border-[var(--panel-border)] bg-[var(--panel)] p-6 shadow-[0_10px_24px_var(--shadow-color)]">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xl font-semibold text-[var(--foreground)]">{item.title}</p>
-                <StatusPill label={item.type} tone="bg-[var(--accent-soft)] text-[var(--accent)]" />
-              </div>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-soft)]">Editar</button>
-                <button type="button" onClick={() => { void handleDelete(item); }} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>
-              </div>
-            </div>
-            <p className="mt-2 text-sm text-[var(--muted-foreground)]">{item.area}</p>
-            <div className="mt-5 grid gap-3 text-sm text-[var(--muted-foreground)] sm:grid-cols-2">
-              <p>Atualizado em: {item.updatedAt}</p>
-              <p>Responsavel: {item.owner}</p>
-            </div>
-          </article>
-        ))}
-      </div>
     </section>
   );
 }
@@ -4043,7 +2524,7 @@ export function OperationsModuleScreen({ section }: { section: DashboardSection 
   if (section.id === "produtos") return <ProductsModule section={section} />;
   if (section.id === "estoque-baixo") return <LowStockModule section={section} />;
   if (section.id === "lotes") return <LotsModule section={section} />;
-  if (section.id === "qualidade") return <QualityModule section={section} />;
+  if (section.id === "qualidade") return <QualityEventsModule section={section} />;
   if (section.id === "fornecedores") return <SuppliersModule section={section} />;
   if (section.id === "categorias") return <CategoriesModule section={section} />;
   if (section.id === "planejamento") return <PlanningModule section={section} />;

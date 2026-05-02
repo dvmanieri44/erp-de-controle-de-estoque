@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 
 import {
   ErpAccessDeniedError,
+  assertCanCreateErpResource,
   assertCanReadErpResource,
-  assertCanWriteErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   getErpApiErrorResponse,
@@ -54,27 +57,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    assertCanWriteErpResource(session, DOCUMENTS_RESOURCE_ID);
+    assertCanCreateErpResource(session, DOCUMENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const document = await createDocument(body.document);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.document.created",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: {
-        accountId: null,
-        resource: `${DOCUMENTS_RESOURCE_ID}:${document.id}`,
-      },
+      session,
+      resource: DOCUMENTS_RESOURCE_ID,
+      entityId: document.id,
       request: requestMetadata,
-      metadata: {
-        version: document.version,
-      },
+      after: document,
+      version: document.version,
     });
 
     return NextResponse.json({ document }, { status: 201 });
@@ -82,23 +76,13 @@ export async function POST(request: Request) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.document.created",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: {
-        accountId: null,
-        resource: DOCUMENTS_RESOURCE_ID,
-      },
+      session,
+      resource: DOCUMENTS_RESOURCE_ID,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

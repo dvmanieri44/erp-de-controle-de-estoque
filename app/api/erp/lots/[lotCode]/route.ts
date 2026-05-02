@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 
 import {
   ErpAccessDeniedError,
+  assertCanDeleteErpResource,
   assertCanReadErpResource,
-  assertCanWriteErpResource,
+  assertCanUpdateErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   createInUseErrorHandler,
@@ -36,13 +40,6 @@ type RouteContext = {
 };
 
 const LOTS_RESOURCE_ID = "operations.lots";
-
-function getLotTarget(lotCode: string) {
-  return {
-    accountId: null,
-    resource: `${LOTS_RESOURCE_ID}:${lotCode}`,
-  };
-}
 
 const getLotNotFoundResponse = createStatusMessageErrorHandler(
   (error): error is InventoryLotNotFoundError =>
@@ -90,32 +87,28 @@ export async function PUT(request: Request, context: RouteContext) {
   const { lotCode } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOTS_RESOURCE_ID);
+    assertCanUpdateErpResource(session, LOTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireInventoryLotBaseVersion(
       body.baseVersion,
       "atualizar",
     );
+    const before = await getLotByCode(lotCode);
     const lot = await updateLot(
       lotCode,
       body.lot,
       { baseVersion },
     );
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.lot.updated",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getLotTarget(lotCode),
+      session,
+      resource: LOTS_RESOURCE_ID,
+      entityId: lotCode,
       request: requestMetadata,
-      metadata: {
-        version: lot.version,
-      },
+      before,
+      after: lot,
+      version: lot.version,
     });
 
     return NextResponse.json({ lot });
@@ -123,20 +116,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.lot.updated",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getLotTarget(lotCode),
+      session,
+      resource: LOTS_RESOURCE_ID,
+      entityId: lotCode,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {
@@ -158,27 +145,24 @@ export async function DELETE(request: Request, context: RouteContext) {
   const { lotCode } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOTS_RESOURCE_ID);
+    assertCanDeleteErpResource(session, LOTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireInventoryLotBaseVersion(
       body.baseVersion,
       "excluir",
     );
+    const before = await getLotByCode(lotCode);
     const deletedLot = await deleteLot(lotCode, baseVersion);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.lot.deleted",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getLotTarget(lotCode),
+      session,
+      resource: LOTS_RESOURCE_ID,
+      entityId: lotCode,
       request: requestMetadata,
+      before,
+      version: deletedLot.version,
       metadata: {
-        version: deletedLot.version,
         deletedAt: deletedLot.deletedAt,
       },
     });
@@ -192,20 +176,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.lot.deleted",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getLotTarget(lotCode),
+      session,
+      resource: LOTS_RESOURCE_ID,
+      entityId: lotCode,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

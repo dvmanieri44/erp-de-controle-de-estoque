@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 
 import {
   ErpAccessDeniedError,
+  assertCanCreateErpResource,
   assertCanReadErpResource,
-  assertCanWriteErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   createPayloadErrorHandler,
@@ -65,27 +68,20 @@ export async function POST(request: Request) {
   }
 
   try {
-    assertCanWriteErpResource(session, MOVEMENTS_RESOURCE_ID);
+    assertCanCreateErpResource(session, MOVEMENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const movement = await createInventoryMovement(body.movement);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.movement.created",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: {
-        accountId: null,
-        resource: MOVEMENTS_RESOURCE_ID,
-      },
+      session,
+      resource: MOVEMENTS_RESOURCE_ID,
+      entityId: movement.id,
       request: requestMetadata,
+      after: movement,
+      version: movement.version,
       metadata: {
         movementId: movement.id,
-        version: movement.version,
       },
     });
 
@@ -94,23 +90,13 @@ export async function POST(request: Request) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.movement.created",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: {
-        accountId: null,
-        resource: MOVEMENTS_RESOURCE_ID,
-      },
+      session,
+      resource: MOVEMENTS_RESOURCE_ID,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

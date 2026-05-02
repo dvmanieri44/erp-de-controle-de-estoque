@@ -5,7 +5,10 @@ import {
   assertCanReadErpResource,
   assertCanWriteErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   getErpApiErrorResponse,
@@ -58,23 +61,14 @@ export async function POST(request: Request) {
     const body = await readJsonObjectBody(request);
     const task = await createTask(body.task);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.task.created",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: {
-        accountId: null,
-        resource: `${TASKS_RESOURCE_ID}:${task.id}`,
-      },
+      session,
+      resource: TASKS_RESOURCE_ID,
+      entityId: task.id,
       request: requestMetadata,
-      metadata: {
-        version: task.version,
-      },
+      after: task,
+      version: task.version,
     });
 
     return NextResponse.json({ task }, { status: 201 });
@@ -82,23 +76,13 @@ export async function POST(request: Request) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.task.created",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: {
-        accountId: null,
-        resource: TASKS_RESOURCE_ID,
-      },
+      session,
+      resource: TASKS_RESOURCE_ID,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

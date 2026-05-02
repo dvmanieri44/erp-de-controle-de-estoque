@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 
 import { isErpResourceId } from "@/lib/erp-data-resources";
 import { ErpAccessDeniedError, assertCanReadErpResource, assertCanWriteErpResource } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import { ErpResourceConflictError, readErpResource, writeErpResource } from "@/lib/server/erp-state";
 import { ErpResourceValidationError } from "@/lib/server/erp-resource-schema";
@@ -210,27 +213,22 @@ export async function PUT(request: Request, context: RouteContext) {
       );
     }
 
+    const before = await readErpResource(resource);
     const payload = await writeErpResource(resource, body.data, {
       baseVersion:
         typeof body.baseVersion === "number" ? body.baseVersion : null,
     });
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.resource.updated",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: {
-        accountId: null,
-        resource,
-      },
+      session,
+      resource,
+      entityId: resource,
       request: requestMetadata,
+      before: before.data,
+      after: payload.data,
+      version: payload.version,
       metadata: {
         items: body.data.length,
-        version: payload.version,
       },
     });
     return NextResponse.json(payload);
@@ -238,23 +236,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.resource.updated",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: {
-        accountId: null,
-        resource,
-      },
+      session,
+      resource,
+      entityId: resource,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     if (error instanceof ErpAccessDeniedError) {

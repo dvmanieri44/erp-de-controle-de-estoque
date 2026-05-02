@@ -1,5 +1,6 @@
 import { dispatchErpDataEvent } from "@/lib/app-events";
 import { type ErpResourceId } from "@/lib/erp-data-resources";
+import { erpQueryClient } from "@/lib/erp-query-client";
 import {
   persistResourceToBackendInBackground,
   syncResourceFromBackendInBackground,
@@ -56,13 +57,18 @@ const INCIDENTS_ENDPOINT = "/api/erp/incidents";
 const DOCUMENTS_ENDPOINT = "/api/erp/documents";
 const TASKS_ENDPOINT = "/api/erp/tasks";
 const PENDING_ENDPOINT = "/api/erp/pending";
-let productsSyncPromise: Promise<VersionedProductLineItem[]> | null = null;
-let lotsSyncPromise: Promise<LotItem[]> | null = null;
-let qualityEventsSyncPromise: Promise<VersionedQualityEventItem[]> | null = null;
-let incidentsSyncPromise: Promise<VersionedIncidentItem[]> | null = null;
-let documentsSyncPromise: Promise<VersionedDocumentItem[]> | null = null;
-let tasksSyncPromise: Promise<VersionedTaskItem[]> | null = null;
-let pendingItemsSyncPromise: Promise<VersionedPendingItem[]> | null = null;
+const DEDICATED_SYNC_CACHE_MS = 30_000;
+const PRODUCTS_QUERY_RESOURCE = "operations.products";
+const LOTS_QUERY_RESOURCE = "operations.lots";
+const QUALITY_EVENTS_QUERY_RESOURCE = "operations.quality-events";
+const INCIDENTS_QUERY_RESOURCE = "operations.incidents";
+const DOCUMENTS_QUERY_RESOURCE = "operations.documents";
+const TASKS_QUERY_RESOURCE = "operations.tasks";
+const PENDING_QUERY_RESOURCE = "operations.pending";
+
+type DedicatedSyncOptions = {
+  force?: boolean;
+};
 
 export type VersionedProductLineItem = ProductLineItem & {
   version?: number;
@@ -350,7 +356,13 @@ function saveCollection<T>(key: string, items: T[], resource: ErpResourceId) {
     return;
   }
 
-  window.localStorage.setItem(key, JSON.stringify(items));
+  const serializedItems = JSON.stringify(items);
+
+  if (window.localStorage.getItem(key) === serializedItems) {
+    return;
+  }
+
+  window.localStorage.setItem(key, serializedItems);
   dispatchErpDataEvent();
   persistResourceToBackendInBackground(resource, items as never[]);
 }
@@ -437,13 +449,16 @@ function writeStoredQualityEvents(events: VersionedQualityEventItem[]) {
     return;
   }
 
-  const serializedEvents = JSON.stringify(sortQualityEvents(events));
+  const sortedEvents = sortQualityEvents(events);
+  const serializedEvents = JSON.stringify(sortedEvents);
 
   if (window.localStorage.getItem(QUALITY_EVENTS_STORAGE_KEY) === serializedEvents) {
+    erpQueryClient.prime(QUALITY_EVENTS_QUERY_RESOURCE, sortedEvents);
     return;
   }
 
   window.localStorage.setItem(QUALITY_EVENTS_STORAGE_KEY, serializedEvents);
+  erpQueryClient.prime(QUALITY_EVENTS_QUERY_RESOURCE, sortedEvents);
   dispatchErpDataEvent();
 }
 
@@ -543,23 +558,21 @@ async function fetchQualityEventsFromServer() {
   return events;
 }
 
-function syncQualityEventsFromServerInBackground() {
+function syncQualityEventsFromServerInBackground(options?: DedicatedSyncOptions) {
   if (typeof window === "undefined") {
     return Promise.resolve(
       cloneCollection(QUALITY_EVENTS) as VersionedQualityEventItem[],
     );
   }
 
-  if (!qualityEventsSyncPromise) {
-    const nextSync = fetchQualityEventsFromServer().finally(() => {
-      if (qualityEventsSyncPromise === nextSync) {
-        qualityEventsSyncPromise = null;
-      }
-    });
-    qualityEventsSyncPromise = nextSync;
-  }
-
-  return qualityEventsSyncPromise;
+  return erpQueryClient.query(
+    QUALITY_EVENTS_QUERY_RESOURCE,
+    fetchQualityEventsFromServer,
+    {
+      force: options?.force,
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function refreshQualityEvents() {
@@ -567,7 +580,13 @@ export async function refreshQualityEvents() {
     return cloneCollection(QUALITY_EVENTS) as VersionedQualityEventItem[];
   }
 
-  return syncQualityEventsFromServerInBackground();
+  return erpQueryClient.refresh(
+    QUALITY_EVENTS_QUERY_RESOURCE,
+    fetchQualityEventsFromServer,
+    {
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function createQualityEvent(event: QualityEventItem) {
@@ -759,13 +778,16 @@ function writeStoredIncidents(incidents: VersionedIncidentItem[]) {
     return;
   }
 
-  const serializedIncidents = JSON.stringify(sortIncidents(incidents));
+  const sortedIncidents = sortIncidents(incidents);
+  const serializedIncidents = JSON.stringify(sortedIncidents);
 
   if (window.localStorage.getItem(INCIDENTS_STORAGE_KEY) === serializedIncidents) {
+    erpQueryClient.prime(INCIDENTS_QUERY_RESOURCE, sortedIncidents);
     return;
   }
 
   window.localStorage.setItem(INCIDENTS_STORAGE_KEY, serializedIncidents);
+  erpQueryClient.prime(INCIDENTS_QUERY_RESOURCE, sortedIncidents);
   dispatchErpDataEvent();
 }
 
@@ -865,23 +887,21 @@ async function fetchIncidentsFromServer() {
   return incidents;
 }
 
-function syncIncidentsFromServerInBackground() {
+function syncIncidentsFromServerInBackground(options?: DedicatedSyncOptions) {
   if (typeof window === "undefined") {
     return Promise.resolve(
       cloneCollection(INCIDENTS) as VersionedIncidentItem[],
     );
   }
 
-  if (!incidentsSyncPromise) {
-    const nextSync = fetchIncidentsFromServer().finally(() => {
-      if (incidentsSyncPromise === nextSync) {
-        incidentsSyncPromise = null;
-      }
-    });
-    incidentsSyncPromise = nextSync;
-  }
-
-  return incidentsSyncPromise;
+  return erpQueryClient.query(
+    INCIDENTS_QUERY_RESOURCE,
+    fetchIncidentsFromServer,
+    {
+      force: options?.force,
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function refreshIncidents() {
@@ -889,7 +909,13 @@ export async function refreshIncidents() {
     return cloneCollection(INCIDENTS) as VersionedIncidentItem[];
   }
 
-  return syncIncidentsFromServerInBackground();
+  return erpQueryClient.refresh(
+    INCIDENTS_QUERY_RESOURCE,
+    fetchIncidentsFromServer,
+    {
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function createIncident(incident: IncidentItem) {
@@ -1075,13 +1101,16 @@ function writeStoredPendingItems(items: VersionedPendingItem[]) {
     return;
   }
 
-  const serializedItems = JSON.stringify(sortPendingItems(items));
+  const sortedItems = sortPendingItems(items);
+  const serializedItems = JSON.stringify(sortedItems);
 
   if (window.localStorage.getItem(PENDING_ITEMS_STORAGE_KEY) === serializedItems) {
+    erpQueryClient.prime(PENDING_QUERY_RESOURCE, sortedItems);
     return;
   }
 
   window.localStorage.setItem(PENDING_ITEMS_STORAGE_KEY, serializedItems);
+  erpQueryClient.prime(PENDING_QUERY_RESOURCE, sortedItems);
   dispatchErpDataEvent();
 }
 
@@ -1181,23 +1210,21 @@ async function fetchPendingItemsFromServer() {
   return pendingItems;
 }
 
-function syncPendingItemsFromServerInBackground() {
+function syncPendingItemsFromServerInBackground(options?: DedicatedSyncOptions) {
   if (typeof window === "undefined") {
     return Promise.resolve(
       cloneCollection(PENDING_ITEMS) as VersionedPendingItem[],
     );
   }
 
-  if (!pendingItemsSyncPromise) {
-    const nextSync = fetchPendingItemsFromServer().finally(() => {
-      if (pendingItemsSyncPromise === nextSync) {
-        pendingItemsSyncPromise = null;
-      }
-    });
-    pendingItemsSyncPromise = nextSync;
-  }
-
-  return pendingItemsSyncPromise;
+  return erpQueryClient.query(
+    PENDING_QUERY_RESOURCE,
+    fetchPendingItemsFromServer,
+    {
+      force: options?.force,
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function refreshPendingItems() {
@@ -1205,7 +1232,13 @@ export async function refreshPendingItems() {
     return cloneCollection(PENDING_ITEMS) as VersionedPendingItem[];
   }
 
-  return syncPendingItemsFromServerInBackground();
+  return erpQueryClient.refresh(
+    PENDING_QUERY_RESOURCE,
+    fetchPendingItemsFromServer,
+    {
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function createPendingItem(item: PendingItem) {
@@ -1391,13 +1424,16 @@ function writeStoredTasks(tasks: VersionedTaskItem[]) {
     return;
   }
 
-  const serializedTasks = JSON.stringify(sortTasks(tasks));
+  const sortedTasks = sortTasks(tasks);
+  const serializedTasks = JSON.stringify(sortedTasks);
 
   if (window.localStorage.getItem(TASKS_STORAGE_KEY) === serializedTasks) {
+    erpQueryClient.prime(TASKS_QUERY_RESOURCE, sortedTasks);
     return;
   }
 
   window.localStorage.setItem(TASKS_STORAGE_KEY, serializedTasks);
+  erpQueryClient.prime(TASKS_QUERY_RESOURCE, sortedTasks);
   dispatchErpDataEvent();
 }
 
@@ -1495,21 +1531,19 @@ async function fetchTasksFromServer() {
   return tasks;
 }
 
-function syncTasksFromServerInBackground() {
+function syncTasksFromServerInBackground(options?: DedicatedSyncOptions) {
   if (typeof window === "undefined") {
     return Promise.resolve(cloneCollection(TASKS) as VersionedTaskItem[]);
   }
 
-  if (!tasksSyncPromise) {
-    const nextSync = fetchTasksFromServer().finally(() => {
-      if (tasksSyncPromise === nextSync) {
-        tasksSyncPromise = null;
-      }
-    });
-    tasksSyncPromise = nextSync;
-  }
-
-  return tasksSyncPromise;
+  return erpQueryClient.query(
+    TASKS_QUERY_RESOURCE,
+    fetchTasksFromServer,
+    {
+      force: options?.force,
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function refreshTasks() {
@@ -1517,7 +1551,13 @@ export async function refreshTasks() {
     return cloneCollection(TASKS) as VersionedTaskItem[];
   }
 
-  return syncTasksFromServerInBackground();
+  return erpQueryClient.refresh(
+    TASKS_QUERY_RESOURCE,
+    fetchTasksFromServer,
+    {
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function createTask(task: TaskItem) {
@@ -1691,13 +1731,16 @@ function writeStoredDocuments(documents: VersionedDocumentItem[]) {
     return;
   }
 
-  const serializedDocuments = JSON.stringify(sortDocuments(documents));
+  const sortedDocuments = sortDocuments(documents);
+  const serializedDocuments = JSON.stringify(sortedDocuments);
 
   if (window.localStorage.getItem(DOCUMENTS_STORAGE_KEY) === serializedDocuments) {
+    erpQueryClient.prime(DOCUMENTS_QUERY_RESOURCE, sortedDocuments);
     return;
   }
 
   window.localStorage.setItem(DOCUMENTS_STORAGE_KEY, serializedDocuments);
+  erpQueryClient.prime(DOCUMENTS_QUERY_RESOURCE, sortedDocuments);
   dispatchErpDataEvent();
 }
 
@@ -1797,21 +1840,19 @@ async function fetchDocumentsFromServer() {
   return documents;
 }
 
-function syncDocumentsFromServerInBackground() {
+function syncDocumentsFromServerInBackground(options?: DedicatedSyncOptions) {
   if (typeof window === "undefined") {
     return Promise.resolve(cloneCollection(DOCUMENTS) as VersionedDocumentItem[]);
   }
 
-  if (!documentsSyncPromise) {
-    const nextSync = fetchDocumentsFromServer().finally(() => {
-      if (documentsSyncPromise === nextSync) {
-        documentsSyncPromise = null;
-      }
-    });
-    documentsSyncPromise = nextSync;
-  }
-
-  return documentsSyncPromise;
+  return erpQueryClient.query(
+    DOCUMENTS_QUERY_RESOURCE,
+    fetchDocumentsFromServer,
+    {
+      force: options?.force,
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function refreshDocuments() {
@@ -1819,7 +1860,13 @@ export async function refreshDocuments() {
     return cloneCollection(DOCUMENTS) as VersionedDocumentItem[];
   }
 
-  return syncDocumentsFromServerInBackground();
+  return erpQueryClient.refresh(
+    DOCUMENTS_QUERY_RESOURCE,
+    fetchDocumentsFromServer,
+    {
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function createDocument(document: DocumentItem) {
@@ -2024,13 +2071,15 @@ function writeStoredProducts(products: VersionedProductLineItem[]) {
     return;
   }
 
-  const serializedProducts = JSON.stringify(sortProducts(products));
+  const sortedProducts = sortProducts(products);
+  const serializedProducts = JSON.stringify(sortedProducts);
 
   if (window.localStorage.getItem(PRODUCT_LINES_STORAGE_KEY) === serializedProducts) {
     return;
   }
 
   window.localStorage.setItem(PRODUCT_LINES_STORAGE_KEY, serializedProducts);
+  erpQueryClient.prime(PRODUCTS_QUERY_RESOURCE, sortedProducts);
   dispatchErpDataEvent();
 }
 
@@ -2136,23 +2185,21 @@ async function fetchProductsFromServer() {
   return products;
 }
 
-function syncProductsFromServerInBackground() {
+function syncProductsFromServerInBackground(options?: DedicatedSyncOptions) {
   if (typeof window === "undefined") {
     return Promise.resolve(
       cloneCollection(PRODUCT_LINES) as VersionedProductLineItem[],
     );
   }
 
-  if (!productsSyncPromise) {
-    const nextSync = fetchProductsFromServer().finally(() => {
-      if (productsSyncPromise === nextSync) {
-        productsSyncPromise = null;
-      }
-    });
-    productsSyncPromise = nextSync;
-  }
-
-  return productsSyncPromise;
+  return erpQueryClient.query(
+    PRODUCTS_QUERY_RESOURCE,
+    fetchProductsFromServer,
+    {
+      force: options?.force,
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function refreshProductLines() {
@@ -2160,7 +2207,13 @@ export async function refreshProductLines() {
     return cloneCollection(PRODUCT_LINES) as VersionedProductLineItem[];
   }
 
-  return syncProductsFromServerInBackground();
+  return erpQueryClient.refresh(
+    PRODUCTS_QUERY_RESOURCE,
+    fetchProductsFromServer,
+    {
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function createProductLine(product: ProductLineItem) {
@@ -2342,13 +2395,16 @@ function writeStoredLots(lots: VersionedLotItem[]) {
     return;
   }
 
-  const serializedLots = JSON.stringify(sortLots(lots));
+  const sortedLots = sortLots(lots);
+  const serializedLots = JSON.stringify(sortedLots);
 
   if (window.localStorage.getItem(LOTS_STORAGE_KEY) === serializedLots) {
+    erpQueryClient.prime(LOTS_QUERY_RESOURCE, sortedLots);
     return;
   }
 
   window.localStorage.setItem(LOTS_STORAGE_KEY, serializedLots);
+  erpQueryClient.prime(LOTS_QUERY_RESOURCE, sortedLots);
   dispatchErpDataEvent();
 }
 
@@ -2436,21 +2492,19 @@ async function fetchLotsFromServer() {
   return lots;
 }
 
-function syncLotsFromServerInBackground() {
+function syncLotsFromServerInBackground(options?: DedicatedSyncOptions) {
   if (typeof window === "undefined") {
     return Promise.resolve(cloneCollection(LOTS));
   }
 
-  if (!lotsSyncPromise) {
-    const nextSync = fetchLotsFromServer().finally(() => {
-      if (lotsSyncPromise === nextSync) {
-        lotsSyncPromise = null;
-      }
-    });
-    lotsSyncPromise = nextSync;
-  }
-
-  return lotsSyncPromise;
+  return erpQueryClient.query(
+    LOTS_QUERY_RESOURCE,
+    fetchLotsFromServer,
+    {
+      force: options?.force,
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function refreshLots() {
@@ -2458,7 +2512,13 @@ export async function refreshLots() {
     return cloneCollection(LOTS);
   }
 
-  return syncLotsFromServerInBackground();
+  return erpQueryClient.refresh(
+    LOTS_QUERY_RESOURCE,
+    fetchLotsFromServer,
+    {
+      staleMs: DEDICATED_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function createLot(lot: LotItem) {

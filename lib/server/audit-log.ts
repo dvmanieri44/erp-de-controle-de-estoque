@@ -16,12 +16,26 @@ let fileWriteQueue = Promise.resolve();
 export type AuditLogCategory = "auth" | "accounts" | "erp" | "security" | "operations";
 export type AuditLogOutcome = "success" | "failure" | "denied";
 
+export type AuditLogJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | AuditLogJsonValue[]
+  | { [key: string]: AuditLogJsonValue };
+
+export type AuditLogMetadata = Record<string, AuditLogJsonValue>;
+
 export type AuditLogEntry = {
   id: string;
   timestamp: string;
   category: AuditLogCategory;
   action: string;
   outcome: AuditLogOutcome;
+  entityId: string | null;
+  before: AuditLogJsonValue | null;
+  after: AuditLogJsonValue | null;
+  version: number | null;
   actor: {
     accountId: string | null;
     username: string | null;
@@ -32,12 +46,19 @@ export type AuditLogEntry = {
     resource: string | null;
   };
   request: RequestMetadata;
-  metadata: Record<string, string | number | boolean | null>;
+  metadata: AuditLogMetadata;
 };
 
-type WriteAuditLogInput = Omit<AuditLogEntry, "id" | "timestamp" | "metadata"> & {
+type WriteAuditLogInput = Omit<
+  AuditLogEntry,
+  "id" | "timestamp" | "entityId" | "before" | "after" | "version" | "metadata"
+> & {
   timestamp?: string;
-  metadata?: Record<string, string | number | boolean | null | undefined>;
+  entityId?: string | null;
+  before?: unknown;
+  after?: unknown;
+  version?: number | null;
+  metadata?: Record<string, unknown>;
 };
 
 function getAuditLogFilePath() {
@@ -55,14 +76,51 @@ function queueFileWrite<T>(operation: () => Promise<T>) {
   return nextOperation;
 }
 
-function sanitizeMetadata(metadata?: Record<string, string | number | boolean | null | undefined>) {
+function sanitizeAuditValue(value: unknown): AuditLogJsonValue | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeAuditValue(item) ?? null);
+  }
+
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).reduce<Record<string, AuditLogJsonValue>>(
+      (result, [key, entryValue]) => {
+        const sanitizedValue = sanitizeAuditValue(entryValue);
+
+        if (sanitizedValue !== undefined) {
+          result[key] = sanitizedValue;
+        }
+
+        return result;
+      },
+      {},
+    );
+  }
+
+  return String(value);
+}
+
+function sanitizeMetadata(metadata?: Record<string, unknown>) {
   if (!metadata) {
     return {};
   }
 
-  return Object.entries(metadata).reduce<Record<string, string | number | boolean | null>>((result, [key, value]) => {
-    if (value !== undefined) {
-      result[key] = value;
+  return Object.entries(metadata).reduce<AuditLogMetadata>((result, [key, value]) => {
+    const sanitizedValue = sanitizeAuditValue(value);
+
+    if (sanitizedValue !== undefined) {
+      result[key] = sanitizedValue;
     }
 
     return result;
@@ -80,6 +138,13 @@ export async function writeAuditLog(input: WriteAuditLogInput) {
     category: input.category,
     action: input.action,
     outcome: input.outcome,
+    entityId: input.entityId ?? null,
+    before: sanitizeAuditValue(input.before) ?? null,
+    after: sanitizeAuditValue(input.after) ?? null,
+    version:
+      typeof input.version === "number" && Number.isFinite(input.version)
+        ? input.version
+        : null,
     actor: input.actor,
     target: input.target,
     request: input.request,

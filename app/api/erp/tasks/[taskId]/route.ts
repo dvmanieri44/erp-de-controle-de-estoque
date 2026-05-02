@@ -5,7 +5,10 @@ import {
   assertCanReadErpResource,
   assertCanWriteErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   createPayloadErrorHandler,
@@ -34,13 +37,6 @@ type RouteContext = {
 };
 
 const TASKS_RESOURCE_ID = "operations.tasks";
-
-function getTaskTarget(taskId: string) {
-  return {
-    accountId: null,
-    resource: `${TASKS_RESOURCE_ID}:${taskId}`,
-  };
-}
 
 const getTaskNotFoundResponse = createStatusMessageErrorHandler(
   (error): error is TaskNotFoundError => error instanceof TaskNotFoundError,
@@ -84,24 +80,20 @@ export async function PUT(request: Request, context: RouteContext) {
     assertCanWriteErpResource(session, TASKS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireTaskBaseVersion(body.baseVersion, "atualizar");
+    const before = await getTaskById(taskId);
     const task = await updateTask(taskId, body.task, {
       baseVersion,
     });
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.task.updated",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getTaskTarget(taskId),
+      session,
+      resource: TASKS_RESOURCE_ID,
+      entityId: taskId,
       request: requestMetadata,
-      metadata: {
-        version: task.version,
-      },
+      before,
+      after: task,
+      version: task.version,
     });
 
     return NextResponse.json({ task });
@@ -109,20 +101,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.task.updated",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getTaskTarget(taskId),
+      session,
+      resource: TASKS_RESOURCE_ID,
+      entityId: taskId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {
@@ -147,21 +133,18 @@ export async function DELETE(request: Request, context: RouteContext) {
     assertCanWriteErpResource(session, TASKS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireTaskBaseVersion(body.baseVersion, "excluir");
+    const before = await getTaskById(taskId);
     const deletedTask = await deleteTask(taskId, baseVersion);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.task.deleted",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getTaskTarget(taskId),
+      session,
+      resource: TASKS_RESOURCE_ID,
+      entityId: taskId,
       request: requestMetadata,
+      before,
+      version: deletedTask.version,
       metadata: {
-        version: deletedTask.version,
         deletedAt: deletedTask.deletedAt,
       },
     });
@@ -175,20 +158,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.task.deleted",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getTaskTarget(taskId),
+      session,
+      resource: TASKS_RESOURCE_ID,
+      entityId: taskId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

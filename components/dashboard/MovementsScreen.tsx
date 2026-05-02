@@ -27,6 +27,7 @@ import {
   MovementVersionConflictError,
   normalizeReferenceText,
   normalizeText,
+  refreshLocationStockBalances,
   refreshMovements,
   type DateRangeFilter,
   type LocationItem,
@@ -40,6 +41,7 @@ import {
   updateMovement,
 } from "@/lib/inventory";
 import { loadLots, loadProductLines } from "@/lib/operations-store";
+import { useErpPermissions } from "@/lib/use-erp-permissions";
 
 type ToastState = {
   id: number;
@@ -480,7 +482,7 @@ function MovementListItem({
   expanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   const quantity = getMovementDisplayQuantity(movement);
   const amountClass =
@@ -529,14 +531,16 @@ function MovementListItem({
                 <path d="m12.5 7.5 4 4" />
               </svg>
             </ActionButton>
-            <ActionButton label={`Excluir ${movement.product}`} onClick={onDelete} tone="danger">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                <path d="M5 7h14" />
-                <path d="M9 7V5h6v2" />
-                <path d="M8 10v7M12 10v7M16 10v7" />
-                <path d="M6 7l1 12h10l1-12" />
-              </svg>
-            </ActionButton>
+            {onDelete ? (
+              <ActionButton label={`Excluir ${movement.product}`} onClick={onDelete} tone="danger">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                  <path d="M5 7h14" />
+                  <path d="M9 7V5h6v2" />
+                  <path d="M8 10v7M12 10v7M16 10v7" />
+                  <path d="M6 7l1 12h10l1-12" />
+                </svg>
+              </ActionButton>
+            ) : null}
           </div>
         </div>
       </div>
@@ -563,6 +567,9 @@ function MovementListItem({
 }
 
 export function MovementsScreen() {
+  const { canDelete, canUpdate } = useErpPermissions();
+  const canDeleteMovements = canDelete("inventory.movements");
+  const canUpdateMovements = canUpdate("inventory.movements");
   const [locations, setLocations] = useState<LocationItem[]>(INITIAL_LOCATIONS);
   const [movements, setMovements] = useState<VersionedMovementItem[]>([]);
   const [locationStockBalances, setLocationStockBalances] = useState<LocationStockBalanceMap>(() => new Map());
@@ -1015,7 +1022,7 @@ export function MovementsScreen() {
 
     try {
       const balances = buildLocationStockBalanceMap(
-        await fetchLocationStockBalances(),
+        await refreshLocationStockBalances(),
       );
       setLocationStockBalances(balances);
       setIsUsingStockFallback(false);
@@ -1070,7 +1077,7 @@ export function MovementsScreen() {
 
       try {
         const balances = buildLocationStockBalanceMap(
-          await fetchLocationStockBalances(),
+          await refreshLocationStockBalances(),
         );
         setLocationStockBalances(balances);
         setIsUsingStockFallback(false);
@@ -1189,7 +1196,7 @@ export function MovementsScreen() {
 
       try {
         const balances = buildLocationStockBalanceMap(
-          await fetchLocationStockBalances(),
+          await refreshLocationStockBalances(),
         );
         setLocationStockBalances(balances);
         setIsUsingStockFallback(false);
@@ -1227,6 +1234,16 @@ export function MovementsScreen() {
       return;
     }
 
+    if (!canDeleteMovements) {
+      setDeleteTarget(null);
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode excluir movimentacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
     const removed = deleteTarget;
     setDeleteTarget(null);
 
@@ -1244,7 +1261,7 @@ export function MovementsScreen() {
 
         try {
           const balances = buildLocationStockBalanceMap(
-            await fetchLocationStockBalances(),
+            await refreshLocationStockBalances(),
           );
           setLocationStockBalances(balances);
           setIsUsingStockFallback(false);
@@ -1456,7 +1473,7 @@ export function MovementsScreen() {
               )
             }
             onEdit={() => openModal(movement)}
-            onDelete={() => setDeleteTarget(movement)}
+            onDelete={canDeleteMovements ? () => setDeleteTarget(movement) : undefined}
           />
         ))}
       </div>
@@ -1650,7 +1667,7 @@ export function MovementsScreen() {
                       className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                     >
                       <option value="concluida">Concluída</option>
-                      <option value="cancelada">Cancelada</option>
+                      {canUpdateMovements ? <option value="cancelada">Cancelada</option> : null}
                     </select>
                   </Field>
                 </>
@@ -1670,7 +1687,7 @@ export function MovementsScreen() {
                       <option value="em_separacao">Em separação</option>
                       <option value="em_transito">Em trânsito</option>
                       <option value="recebida">Recebida</option>
-                      <option value="cancelada">Cancelada</option>
+                      {canUpdateMovements ? <option value="cancelada">Cancelada</option> : null}
                     </select>
                   </Field>
 

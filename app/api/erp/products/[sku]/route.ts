@@ -5,7 +5,10 @@ import {
   assertCanReadErpResource,
   assertCanWriteErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   createInUseErrorHandler,
@@ -36,13 +39,6 @@ type RouteContext = {
 };
 
 const PRODUCTS_RESOURCE_ID = "operations.products";
-
-function getProductTarget(sku: string) {
-  return {
-    accountId: null,
-    resource: `${PRODUCTS_RESOURCE_ID}:${sku}`,
-  };
-}
 
 const getProductNotFoundResponse = createStatusMessageErrorHandler(
   (error): error is OperationsProductNotFoundError =>
@@ -96,22 +92,18 @@ export async function PUT(request: Request, context: RouteContext) {
       body.baseVersion,
       "atualizar",
     );
+    const before = await getProductBySku(sku);
     const product = await updateProduct(sku, body.product, baseVersion);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.product.updated",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getProductTarget(sku),
+      session,
+      resource: PRODUCTS_RESOURCE_ID,
+      entityId: sku,
       request: requestMetadata,
-      metadata: {
-        version: product.version,
-      },
+      before,
+      after: product,
+      version: product.version,
     });
 
     return NextResponse.json({ product });
@@ -119,20 +111,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.product.updated",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getProductTarget(sku),
+      session,
+      resource: PRODUCTS_RESOURCE_ID,
+      entityId: sku,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {
@@ -160,21 +146,18 @@ export async function DELETE(request: Request, context: RouteContext) {
       body.baseVersion,
       "excluir",
     );
+    const before = await getProductBySku(sku);
     const deletedProduct = await deleteProduct(sku, baseVersion);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.product.deleted",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getProductTarget(sku),
+      session,
+      resource: PRODUCTS_RESOURCE_ID,
+      entityId: sku,
       request: requestMetadata,
+      before,
+      version: deletedProduct.version,
       metadata: {
-        version: deletedProduct.version,
         deletedAt: deletedProduct.deletedAt,
       },
     });
@@ -188,20 +171,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.product.deleted",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getProductTarget(sku),
+      session,
+      resource: PRODUCTS_RESOURCE_ID,
+      entityId: sku,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

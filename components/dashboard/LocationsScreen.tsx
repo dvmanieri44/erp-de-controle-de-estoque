@@ -26,6 +26,7 @@ import {
   loadMovements,
   normalizeText,
   parseCapacity,
+  refreshLocationStockBalances,
   refreshLocations,
   updateLocation,
   type LocationItem,
@@ -35,6 +36,7 @@ import {
   type MovementItem,
   type VersionedLocationItem,
 } from "@/lib/inventory";
+import { useErpPermissions } from "@/lib/use-erp-permissions";
 
 type ToastState = {
   id: number;
@@ -351,7 +353,7 @@ function LocationCard({
   locale: keyof typeof COPY;
   copy: (typeof COPY)[keyof typeof COPY];
   onEdit: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   return (
     <article className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 shadow-[0_6px_18px_var(--shadow-color)] transition-colors">
@@ -376,14 +378,16 @@ function LocationCard({
               <path d="m12.5 7.5 4 4" />
             </svg>
           </ActionButton>
-          <ActionButton onClick={onDelete} tone="danger" label={formatMessage(copy.deleteLocationAria, { name: location.name })}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-              <path d="M5 7h14" />
-              <path d="M9 7V5h6v2" />
-              <path d="M8 10v7M12 10v7M16 10v7" />
-              <path d="M6 7l1 12h10l1-12" />
-            </svg>
-          </ActionButton>
+          {onDelete ? (
+            <ActionButton onClick={onDelete} tone="danger" label={formatMessage(copy.deleteLocationAria, { name: location.name })}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                <path d="M5 7h14" />
+                <path d="M9 7V5h6v2" />
+                <path d="M8 10v7M12 10v7M16 10v7" />
+                <path d="M6 7l1 12h10l1-12" />
+              </svg>
+            </ActionButton>
+          ) : null}
         </div>
       </div>
 
@@ -443,6 +447,8 @@ function Toast({ toast }: { toast: NonNullable<ToastState> }) {
 }
 
 export function LocationsScreen() {
+  const { canDelete } = useErpPermissions();
+  const canDeleteLocations = canDelete("inventory.locations");
   const { locale } = useLocale();
   const copy = COPY[locale];
   const stockBalanceFallbackMessage = useMemo(
@@ -712,6 +718,19 @@ export function LocationsScreen() {
     }
   }
 
+  async function reloadLocationStockBalances(force = false) {
+    try {
+      const balances = force
+        ? await refreshLocationStockBalances()
+        : await fetchLocationStockBalances();
+      setLocationStockBalances(buildLocationStockBalanceMap(balances));
+      setStockBalanceError(null);
+    } catch {
+      setLocationStockBalances(new Map());
+      setStockBalanceError(stockBalanceFallbackMessage);
+    }
+  }
+
   async function handleSubmit() {
     const nextErrors = validateForm(form);
     setErrors(nextErrors);
@@ -754,6 +773,7 @@ export function LocationsScreen() {
             location.id === currentEditingId ? updatedLocation : location,
           ),
         );
+        await reloadLocationStockBalances(true);
         setToast({
           id: Date.now(),
           message: copy.locationUpdated,
@@ -791,6 +811,7 @@ export function LocationsScreen() {
           createdLocation,
           ...current.filter((location) => location.id !== createdLocation.id),
         ]);
+        await reloadLocationStockBalances(true);
         setToast({
           id: Date.now(),
           message: copy.locationCreated,
@@ -818,11 +839,30 @@ export function LocationsScreen() {
   }
 
   function confirmDelete(location: VersionedLocationItem) {
+    if (!canDeleteLocations) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode excluir localizacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
     setDeleteTarget(location);
   }
 
   async function handleDelete() {
     if (!deleteTarget) {
+      return;
+    }
+
+    if (!canDeleteLocations) {
+      setDeleteTarget(null);
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode excluir localizacoes.",
+        tone: "error",
+      });
       return;
     }
 
@@ -850,6 +890,7 @@ export function LocationsScreen() {
     try {
       await deleteLocation(locationId, baseVersion);
       setLocations((current) => current.filter((location) => location.id !== locationId));
+      await reloadLocationStockBalances(true);
       setToast({
         id: Date.now(),
         message: copy.locationDeleted,
@@ -960,7 +1001,7 @@ export function LocationsScreen() {
             locale={locale}
             copy={copy}
             onEdit={() => openEditModal(location)}
-            onDelete={() => confirmDelete(location)}
+            onDelete={canDeleteLocations ? () => confirmDelete(location) : undefined}
           />
         ))}
       </div>

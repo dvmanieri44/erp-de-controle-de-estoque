@@ -27,6 +27,7 @@ import {
   MovementVersionConflictError,
   normalizeReferenceText,
   normalizeText,
+  refreshLocationStockBalances,
   refreshMovements,
   type DateRangeFilter,
   type LocationItem,
@@ -38,6 +39,7 @@ import {
   updateMovement,
 } from "@/lib/inventory";
 import { loadLots, loadProductLines } from "@/lib/operations-store";
+import { useErpPermissions } from "@/lib/use-erp-permissions";
 
 type ToastState = {
   id: number;
@@ -406,6 +408,9 @@ function buildTimeline(transfer: MovementItem) {
 }
 
 export function TransfersScreen() {
+  const { canDelete, canUpdate } = useErpPermissions();
+  const canDeleteMovements = canDelete("inventory.movements");
+  const canUpdateMovements = canUpdate("inventory.movements");
   const [locations, setLocations] = useState<LocationItem[]>(INITIAL_LOCATIONS);
   const [movements, setMovements] = useState<VersionedMovementItem[]>([]);
   const [locationStockBalances, setLocationStockBalances] = useState<LocationStockBalanceMap>(() => new Map());
@@ -818,7 +823,7 @@ export function TransfersScreen() {
 
     try {
       const balances = buildLocationStockBalanceMap(
-        await fetchLocationStockBalances(),
+        await refreshLocationStockBalances(),
       );
       setLocationStockBalances(balances);
       setIsUsingStockFallback(false);
@@ -873,7 +878,7 @@ export function TransfersScreen() {
 
       try {
         const balances = buildLocationStockBalanceMap(
-          await fetchLocationStockBalances(),
+          await refreshLocationStockBalances(),
         );
         setLocationStockBalances(balances);
         setIsUsingStockFallback(false);
@@ -986,7 +991,7 @@ export function TransfersScreen() {
 
         try {
           const balances = buildLocationStockBalanceMap(
-            await fetchLocationStockBalances(),
+            await refreshLocationStockBalances(),
           );
           setLocationStockBalances(balances);
           setIsUsingStockFallback(false);
@@ -1043,6 +1048,16 @@ export function TransfersScreen() {
       return;
     }
 
+    if (!canDeleteMovements) {
+      setDeleteTarget(null);
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode excluir transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
     if ((deleteTarget.transferStatus ?? "recebida") === "recebida") {
       setToast({
         id: Date.now(),
@@ -1070,7 +1085,7 @@ export function TransfersScreen() {
 
       try {
         const balances = buildLocationStockBalanceMap(
-          await fetchLocationStockBalances(),
+          await refreshLocationStockBalances(),
         );
         setLocationStockBalances(balances);
         setIsUsingStockFallback(false);
@@ -1145,7 +1160,7 @@ export function TransfersScreen() {
 
       try {
         const balances = buildLocationStockBalanceMap(
-          await fetchLocationStockBalances(),
+          await refreshLocationStockBalances(),
         );
         setLocationStockBalances(balances);
         setIsUsingStockFallback(false);
@@ -1177,6 +1192,15 @@ export function TransfersScreen() {
   }
 
   async function handleCancelTransfer(transfer: VersionedMovementItem) {
+    if (!canUpdateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode cancelar transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
     if (typeof transfer.version !== "number") {
       await reloadMovementsAfterConflict(
         TRANSFER_STALE_VERSION_MESSAGE,
@@ -1191,7 +1215,7 @@ export function TransfersScreen() {
 
       try {
         const balances = buildLocationStockBalanceMap(
-          await fetchLocationStockBalances(),
+          await refreshLocationStockBalances(),
         );
         setLocationStockBalances(balances);
         setIsUsingStockFallback(false);
@@ -1435,7 +1459,7 @@ export function TransfersScreen() {
                     Avançar status
                   </button>
                 ) : null}
-                {(transfer.transferStatus ?? "solicitada") !== "cancelada" && (transfer.transferStatus ?? "solicitada") !== "recebida" ? (
+                {canUpdateMovements && (transfer.transferStatus ?? "solicitada") !== "cancelada" && (transfer.transferStatus ?? "solicitada") !== "recebida" ? (
                   <button
                     type="button"
                     onClick={() => handleCancelTransfer(transfer)}
@@ -1461,14 +1485,16 @@ export function TransfersScreen() {
                     <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
                   </svg>
                 </ActionButton>
-                <ActionButton label={`Excluir transferência de ${transfer.product}`} onClick={() => setDeleteTarget(transfer)} tone="danger">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                    <path d="M5 7h14" />
-                    <path d="M9 7V5h6v2" />
-                    <path d="M8 10v7M12 10v7M16 10v7" />
-                    <path d="M6 7l1 12h10l1-12" />
-                  </svg>
-                </ActionButton>
+                {canDeleteMovements ? (
+                  <ActionButton label={`Excluir transferência de ${transfer.product}`} onClick={() => setDeleteTarget(transfer)} tone="danger">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                      <path d="M5 7h14" />
+                      <path d="M9 7V5h6v2" />
+                      <path d="M8 10v7M12 10v7M16 10v7" />
+                      <path d="M6 7l1 12h10l1-12" />
+                    </svg>
+                  </ActionButton>
+                ) : null}
               </div>
             </div>
 

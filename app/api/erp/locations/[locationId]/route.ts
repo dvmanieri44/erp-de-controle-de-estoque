@@ -5,7 +5,10 @@ import {
   assertCanReadErpResource,
   assertCanWriteErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   createInUseErrorHandler,
@@ -36,13 +39,6 @@ type RouteContext = {
 };
 
 const LOCATIONS_RESOURCE_ID = "inventory.locations";
-
-function getLocationTarget(locationId: string) {
-  return {
-    accountId: null,
-    resource: `${LOCATIONS_RESOURCE_ID}:${locationId}`,
-  };
-}
 
 const getLocationNotFoundResponse = createStatusMessageErrorHandler(
   (error): error is InventoryLocationNotFoundError =>
@@ -96,26 +92,22 @@ export async function PUT(request: Request, context: RouteContext) {
       body.baseVersion,
       "atualizar",
     );
+    const before = await getLocationById(locationId);
     const location = await updateLocation(
       locationId,
       body.location,
       { baseVersion },
     );
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.location.updated",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getLocationTarget(locationId),
+      session,
+      resource: LOCATIONS_RESOURCE_ID,
+      entityId: locationId,
       request: requestMetadata,
-      metadata: {
-        version: location.version,
-      },
+      before,
+      after: location,
+      version: location.version,
     });
 
     return NextResponse.json({ location });
@@ -123,20 +115,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.location.updated",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getLocationTarget(locationId),
+      session,
+      resource: LOCATIONS_RESOURCE_ID,
+      entityId: locationId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {
@@ -164,21 +150,18 @@ export async function DELETE(request: Request, context: RouteContext) {
       body.baseVersion,
       "excluir",
     );
+    const before = await getLocationById(locationId);
     const deletedLocation = await deleteLocation(locationId, baseVersion);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.location.deleted",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getLocationTarget(locationId),
+      session,
+      resource: LOCATIONS_RESOURCE_ID,
+      entityId: locationId,
       request: requestMetadata,
+      before,
+      version: deletedLocation.version,
       metadata: {
-        version: deletedLocation.version,
         deletedAt: deletedLocation.deletedAt,
       },
     });
@@ -192,20 +175,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.location.deleted",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getLocationTarget(locationId),
+      session,
+      resource: LOCATIONS_RESOURCE_ID,
+      entityId: locationId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

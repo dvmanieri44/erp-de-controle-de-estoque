@@ -4,6 +4,7 @@ import {
   type LanguagePreference,
 } from "@/lib/ui-preferences";
 import { dispatchErpDataEvent } from "@/lib/app-events";
+import { erpQueryClient } from "@/lib/erp-query-client";
 
 export type LocationType = "Fábrica" | "Centro de Distribuição" | "Expedição" | "Qualidade";
 export type LocationStatus = "Ativa" | "Inativa" | "Em manutenção";
@@ -82,8 +83,15 @@ const MOVEMENTS_ENDPOINT = "/api/erp/movements";
 const LOCATIONS_ENDPOINT = "/api/erp/locations";
 const LOCATION_STOCK_ENDPOINT = "/api/erp/stock/locations";
 const LOT_LOCATION_ENDPOINT_PREFIX = "/api/erp/stock/lots";
-let movementsSyncPromise: Promise<VersionedMovementItem[]> | null = null;
-let locationsSyncPromise: Promise<VersionedLocationItem[]> | null = null;
+const INVENTORY_SYNC_CACHE_MS = 30_000;
+const LOCATION_STOCK_SYNC_CACHE_MS = 5_000;
+const LOCATIONS_QUERY_RESOURCE = "inventory.locations";
+const MOVEMENTS_QUERY_RESOURCE = "inventory.movements";
+const LOCATION_STOCK_QUERY_RESOURCE = "inventory.stock.locations";
+
+type InventorySyncOptions = {
+  force?: boolean;
+};
 
 type InventoryMovementsListResponse = {
   items?: unknown;
@@ -928,10 +936,16 @@ function writeStoredLocations(locations: VersionedLocationItem[]) {
   }
 
   window.localStorage.setItem(LOCATIONS_STORAGE_KEY, serializedLocations);
+  erpQueryClient.prime(LOCATIONS_QUERY_RESOURCE, sortedLocations);
   dispatchErpDataEvent();
 }
 
+function invalidateLocationStockBalances() {
+  erpQueryClient.invalidate(LOCATION_STOCK_QUERY_RESOURCE);
+}
+
 function upsertStoredLocation(location: VersionedLocationItem) {
+  invalidateLocationStockBalances();
   const current = readStoredLocations();
   writeStoredLocations([
     location,
@@ -940,6 +954,7 @@ function upsertStoredLocation(location: VersionedLocationItem) {
 }
 
 function removeStoredLocation(locationId: string) {
+  invalidateLocationStockBalances();
   writeStoredLocations(
     readStoredLocations().filter((location) => location.id !== locationId),
   );
@@ -983,17 +998,21 @@ function writeStoredMovements(movements: VersionedMovementItem[]) {
     return;
   }
 
-  const serializedMovements = JSON.stringify(sortMovements(movements));
+  const sortedMovements = sortMovements(movements);
+  const serializedMovements = JSON.stringify(sortedMovements);
 
   if (window.localStorage.getItem(MOVEMENTS_STORAGE_KEY) === serializedMovements) {
+    erpQueryClient.prime(MOVEMENTS_QUERY_RESOURCE, sortedMovements);
     return;
   }
 
   window.localStorage.setItem(MOVEMENTS_STORAGE_KEY, serializedMovements);
+  erpQueryClient.prime(MOVEMENTS_QUERY_RESOURCE, sortedMovements);
   dispatchErpDataEvent();
 }
 
 function upsertStoredMovement(movement: VersionedMovementItem) {
+  invalidateLocationStockBalances();
   const current = readStoredMovements();
   writeStoredMovements([
     movement,
@@ -1002,6 +1021,7 @@ function upsertStoredMovement(movement: VersionedMovementItem) {
 }
 
 function removeStoredMovement(movementId: string) {
+  invalidateLocationStockBalances();
   writeStoredMovements(
     readStoredMovements().filter((movement) => movement.id !== movementId),
   );
@@ -1125,21 +1145,19 @@ async function fetchLocationsFromServer() {
   return locations.length > 0 ? locations : INITIAL_LOCATIONS;
 }
 
-function syncLocationsFromServerInBackground() {
+function syncLocationsFromServerInBackground(options?: InventorySyncOptions) {
   if (typeof window === "undefined") {
     return Promise.resolve(INITIAL_LOCATIONS);
   }
 
-  if (!locationsSyncPromise) {
-    const nextSync = fetchLocationsFromServer().finally(() => {
-      if (locationsSyncPromise === nextSync) {
-        locationsSyncPromise = null;
-      }
-    });
-    locationsSyncPromise = nextSync;
-  }
-
-  return locationsSyncPromise;
+  return erpQueryClient.query(
+    LOCATIONS_QUERY_RESOURCE,
+    fetchLocationsFromServer,
+    {
+      force: options?.force,
+      staleMs: INVENTORY_SYNC_CACHE_MS,
+    },
+  );
 }
 
 async function fetchMovementsFromServer() {
@@ -1168,21 +1186,19 @@ async function fetchMovementsFromServer() {
   return movements;
 }
 
-function syncMovementsFromServerInBackground() {
+function syncMovementsFromServerInBackground(options?: InventorySyncOptions) {
   if (typeof window === "undefined") {
     return Promise.resolve(INITIAL_MOVEMENTS);
   }
 
-  if (!movementsSyncPromise) {
-    const nextSync = fetchMovementsFromServer().finally(() => {
-      if (movementsSyncPromise === nextSync) {
-        movementsSyncPromise = null;
-      }
-    });
-    movementsSyncPromise = nextSync;
-  }
-
-  return movementsSyncPromise;
+  return erpQueryClient.query(
+    MOVEMENTS_QUERY_RESOURCE,
+    fetchMovementsFromServer,
+    {
+      force: options?.force,
+      staleMs: INVENTORY_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function refreshMovements() {
@@ -1190,7 +1206,13 @@ export async function refreshMovements() {
     return INITIAL_MOVEMENTS;
   }
 
-  return syncMovementsFromServerInBackground();
+  return erpQueryClient.refresh(
+    MOVEMENTS_QUERY_RESOURCE,
+    fetchMovementsFromServer,
+    {
+      staleMs: INVENTORY_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function refreshLocations() {
@@ -1198,7 +1220,13 @@ export async function refreshLocations() {
     return INITIAL_LOCATIONS;
   }
 
-  return syncLocationsFromServerInBackground();
+  return erpQueryClient.refresh(
+    LOCATIONS_QUERY_RESOURCE,
+    fetchLocationsFromServer,
+    {
+      staleMs: INVENTORY_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export function buildLocationStockBalanceMap(
@@ -1209,7 +1237,7 @@ export function buildLocationStockBalanceMap(
   );
 }
 
-export async function fetchLocationStockBalances() {
+async function fetchLocationStockBalancesFromServer() {
   const response = await fetch(LOCATION_STOCK_ENDPOINT, {
     method: "GET",
     cache: "no-store",
@@ -1237,6 +1265,26 @@ export async function fetchLocationStockBalances() {
   return payload.items
     .map((item) => normalizeLocationStockBalanceItem(item))
     .filter((item): item is LocationStockBalanceItem => item !== null);
+}
+
+export async function fetchLocationStockBalances() {
+  return erpQueryClient.query(
+    LOCATION_STOCK_QUERY_RESOURCE,
+    fetchLocationStockBalancesFromServer,
+    {
+      staleMs: LOCATION_STOCK_SYNC_CACHE_MS,
+    },
+  );
+}
+
+export async function refreshLocationStockBalances() {
+  return erpQueryClient.refresh(
+    LOCATION_STOCK_QUERY_RESOURCE,
+    fetchLocationStockBalancesFromServer,
+    {
+      staleMs: LOCATION_STOCK_SYNC_CACHE_MS,
+    },
+  );
 }
 
 export async function fetchLotDerivedLocation(lotCode: string) {

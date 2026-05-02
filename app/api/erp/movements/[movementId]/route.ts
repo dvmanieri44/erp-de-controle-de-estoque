@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 
 import {
   ErpAccessDeniedError,
+  assertCanDeleteErpResource,
   assertCanReadErpResource,
-  assertCanWriteErpResource,
+  assertCanUpdateErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   createPayloadErrorHandler,
@@ -57,13 +61,6 @@ function parseDeleteMode(request: Request, body: Record<string, unknown>) {
   }
 
   return mode;
-}
-
-function getMovementTarget(movementId: string) {
-  return {
-    accountId: null,
-    resource: `${MOVEMENTS_RESOURCE_ID}:${movementId}`,
-  };
 }
 
 const getMovementInvalidProductIdResponse = createPayloadErrorHandler(
@@ -127,33 +124,29 @@ export async function PUT(request: Request, context: RouteContext) {
   const { movementId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, MOVEMENTS_RESOURCE_ID);
+    assertCanUpdateErpResource(session, MOVEMENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireInventoryMovementBaseVersion(
       body.baseVersion,
       "atualizar",
     );
 
+    const before = await getInventoryMovementById(movementId);
     const movement = await updateInventoryMovement(
       movementId,
       body.movement,
       { baseVersion },
     );
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.movement.updated",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getMovementTarget(movementId),
+      session,
+      resource: MOVEMENTS_RESOURCE_ID,
+      entityId: movementId,
       request: requestMetadata,
-      metadata: {
-        version: movement.version,
-      },
+      before,
+      after: movement,
+      version: movement.version,
     });
 
     return NextResponse.json({ movement });
@@ -161,20 +154,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.movement.updated",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getMovementTarget(movementId),
+      session,
+      resource: MOVEMENTS_RESOURCE_ID,
+      entityId: movementId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {
@@ -203,7 +190,6 @@ export async function DELETE(request: Request, context: RouteContext) {
   const { movementId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, MOVEMENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireInventoryMovementBaseVersion(
       body.baseVersion,
@@ -211,28 +197,32 @@ export async function DELETE(request: Request, context: RouteContext) {
     );
 
     const mode = parseDeleteMode(request, body);
+    if (mode === "cancel") {
+      assertCanUpdateErpResource(session, MOVEMENTS_RESOURCE_ID);
+    } else {
+      assertCanDeleteErpResource(session, MOVEMENTS_RESOURCE_ID);
+    }
+
+    const before = await getInventoryMovementById(movementId);
     const movement = await deleteOrCancelInventoryMovement(movementId, {
       baseVersion,
       mode,
     });
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action:
         mode === "cancel"
           ? "erp.movement.cancelled"
           : "erp.movement.deleted",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getMovementTarget(movementId),
+      session,
+      resource: MOVEMENTS_RESOURCE_ID,
+      entityId: movementId,
       request: requestMetadata,
+      before,
+      after: mode === "cancel" ? movement : null,
+      version: movement?.version ?? before?.version ?? null,
       metadata: {
         mode,
-        version: movement?.version ?? null,
       },
     });
 
@@ -251,20 +241,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.movement.deleted",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getMovementTarget(movementId),
+      session,
+      resource: MOVEMENTS_RESOURCE_ID,
+      entityId: movementId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

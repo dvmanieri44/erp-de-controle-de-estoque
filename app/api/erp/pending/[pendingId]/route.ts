@@ -5,7 +5,10 @@ import {
   assertCanReadErpResource,
   assertCanWriteErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   createPayloadErrorHandler,
@@ -34,13 +37,6 @@ type RouteContext = {
 };
 
 const PENDING_RESOURCE_ID = "operations.pending";
-
-function getPendingTarget(pendingId: string) {
-  return {
-    accountId: null,
-    resource: `${PENDING_RESOURCE_ID}:${pendingId}`,
-  };
-}
 
 const getPendingNotFoundResponse = createStatusMessageErrorHandler(
   (error): error is PendingNotFoundError =>
@@ -89,24 +85,20 @@ export async function PUT(request: Request, context: RouteContext) {
       body.baseVersion,
       "atualizar",
     );
+    const before = await getPendingItemById(pendingId);
     const item = await updatePendingItem(pendingId, body.item, {
       baseVersion,
     });
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.pending.updated",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getPendingTarget(pendingId),
+      session,
+      resource: PENDING_RESOURCE_ID,
+      entityId: pendingId,
       request: requestMetadata,
-      metadata: {
-        version: item.version,
-      },
+      before,
+      after: item,
+      version: item.version,
     });
 
     return NextResponse.json({ item });
@@ -114,20 +106,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.pending.updated",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getPendingTarget(pendingId),
+      session,
+      resource: PENDING_RESOURCE_ID,
+      entityId: pendingId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {
@@ -152,21 +138,18 @@ export async function DELETE(request: Request, context: RouteContext) {
     assertCanWriteErpResource(session, PENDING_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requirePendingBaseVersion(body.baseVersion, "excluir");
+    const before = await getPendingItemById(pendingId);
     const deletedItem = await deletePendingItem(pendingId, baseVersion);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.pending.deleted",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getPendingTarget(pendingId),
+      session,
+      resource: PENDING_RESOURCE_ID,
+      entityId: pendingId,
       request: requestMetadata,
+      before,
+      version: deletedItem.version,
       metadata: {
-        version: deletedItem.version,
         deletedAt: deletedItem.deletedAt,
       },
     });
@@ -180,20 +163,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.pending.deleted",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getPendingTarget(pendingId),
+      session,
+      resource: PENDING_RESOURCE_ID,
+      entityId: pendingId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {

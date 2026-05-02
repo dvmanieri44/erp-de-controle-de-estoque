@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 
 import {
   ErpAccessDeniedError,
+  assertCanDeleteErpResource,
   assertCanReadErpResource,
-  assertCanWriteErpResource,
+  assertCanUpdateErpResource,
 } from "@/lib/server/erp-access-control";
-import { writeAuditLog } from "@/lib/server/audit-log";
+import {
+  getAuditErrorMetadata,
+  writeErpMutationAuditLog,
+} from "@/lib/server/erp-audit";
 import { readServerSession } from "@/lib/server/auth-session";
 import {
   createPayloadErrorHandler,
@@ -34,13 +38,6 @@ type RouteContext = {
 };
 
 const QUALITY_EVENTS_RESOURCE_ID = "operations.quality-events";
-
-function getQualityEventTarget(eventId: string) {
-  return {
-    accountId: null,
-    resource: `${QUALITY_EVENTS_RESOURCE_ID}:${eventId}`,
-  };
-}
 
 const getQualityEventNotFoundResponse = createStatusMessageErrorHandler(
   (error): error is QualityEventNotFoundError =>
@@ -83,30 +80,26 @@ export async function PUT(request: Request, context: RouteContext) {
   const { eventId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, QUALITY_EVENTS_RESOURCE_ID);
+    assertCanUpdateErpResource(session, QUALITY_EVENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireQualityEventBaseVersion(
       body.baseVersion,
       "atualizar",
     );
+    const before = await getQualityEventById(eventId);
     const event = await updateQualityEvent(eventId, body.event, {
       baseVersion,
     });
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.quality_event.updated",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getQualityEventTarget(eventId),
+      session,
+      resource: QUALITY_EVENTS_RESOURCE_ID,
+      entityId: eventId,
       request: requestMetadata,
-      metadata: {
-        version: event.version,
-      },
+      before,
+      after: event,
+      version: event.version,
     });
 
     return NextResponse.json({ event });
@@ -114,20 +107,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.quality_event.updated",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getQualityEventTarget(eventId),
+      session,
+      resource: QUALITY_EVENTS_RESOURCE_ID,
+      entityId: eventId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {
@@ -152,27 +139,24 @@ export async function DELETE(request: Request, context: RouteContext) {
   const { eventId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, QUALITY_EVENTS_RESOURCE_ID);
+    assertCanDeleteErpResource(session, QUALITY_EVENTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireQualityEventBaseVersion(
       body.baseVersion,
       "excluir",
     );
+    const before = await getQualityEventById(eventId);
     const deletedEvent = await deleteQualityEvent(eventId, baseVersion);
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.quality_event.deleted",
-      outcome: "success",
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getQualityEventTarget(eventId),
+      session,
+      resource: QUALITY_EVENTS_RESOURCE_ID,
+      entityId: eventId,
       request: requestMetadata,
+      before,
+      version: deletedEvent.version,
       metadata: {
-        version: deletedEvent.version,
         deletedAt: deletedEvent.deletedAt,
       },
     });
@@ -186,20 +170,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     const outcome =
       error instanceof ErpAccessDeniedError ? "denied" : "failure";
 
-    await writeAuditLog({
-      category: "erp",
+    await writeErpMutationAuditLog({
       action: "erp.quality_event.deleted",
       outcome,
-      actor: {
-        accountId: session.account.id,
-        username: session.username,
-        role: session.role,
-      },
-      target: getQualityEventTarget(eventId),
+      session,
+      resource: QUALITY_EVENTS_RESOURCE_ID,
+      entityId: eventId,
       request: requestMetadata,
-      metadata: {
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      metadata: getAuditErrorMetadata(error),
     });
 
     return getErpApiErrorResponse(error, {
