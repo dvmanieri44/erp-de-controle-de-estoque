@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import {
   ErpAccessDeniedError,
+  assertCanCreateErpResource,
   assertCanReadErpResource,
-  assertCanWriteErpResource,
 } from "@/lib/server/erp-access-control";
 import {
   getAuditErrorMetadata,
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    assertCanWriteErpResource(session, PRODUCTS_RESOURCE_ID);
+    assertCanCreateErpResource(session, PRODUCTS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const product = await createProduct(body.product);
 

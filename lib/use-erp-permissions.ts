@@ -44,19 +44,29 @@ const ERP_CLIENT_RESOURCE_ACCESS: Record<ErpResourceId, ResourceAccessPolicy> = 
   "inventory.locations": {
     read: ALL_AUTHENTICATED_ROLES,
     write: ADMIN_AND_MANAGER,
+    create: ADMIN_AND_MANAGER,
+    update: ADMIN_AND_MANAGER,
+    delete: ADMIN_AND_MANAGER,
   },
   "inventory.movements": {
     read: ALL_AUTHENTICATED_ROLES,
     write: OPERATIONAL_WRITERS,
+    create: OPERATIONAL_WRITERS,
+    update: OPERATIONAL_WRITERS,
     delete: ADMIN_AND_MANAGER,
   },
   "operations.products": {
     read: ALL_AUTHENTICATED_ROLES,
     write: ADMIN_AND_MANAGER,
+    create: ADMIN_AND_MANAGER,
+    update: ADMIN_AND_MANAGER,
+    delete: ADMIN_AND_MANAGER,
   },
   "operations.lots": {
     read: ALL_AUTHENTICATED_ROLES,
     write: OPERATIONAL_WRITERS,
+    create: OPERATIONAL_WRITERS,
+    update: OPERATIONAL_WRITERS,
     delete: ADMIN_AND_MANAGER,
   },
   "operations.suppliers": {
@@ -74,6 +84,8 @@ const ERP_CLIENT_RESOURCE_ACCESS: Record<ErpResourceId, ResourceAccessPolicy> = 
   "operations.quality-events": {
     read: ALL_AUTHENTICATED_ROLES,
     write: OPERATIONAL_WRITERS,
+    create: OPERATIONAL_WRITERS,
+    update: OPERATIONAL_WRITERS,
     delete: ADMIN_AND_MANAGER,
   },
   "operations.planning": {
@@ -87,10 +99,16 @@ const ERP_CLIENT_RESOURCE_ACCESS: Record<ErpResourceId, ResourceAccessPolicy> = 
   "operations.pending": {
     read: ALL_AUTHENTICATED_ROLES,
     write: OPERATIONAL_WRITERS,
+    create: OPERATIONAL_WRITERS,
+    update: OPERATIONAL_WRITERS,
+    delete: ADMIN_AND_MANAGER,
   },
   "operations.tasks": {
     read: ALL_AUTHENTICATED_ROLES,
     write: OPERATIONAL_WRITERS,
+    create: OPERATIONAL_WRITERS,
+    update: OPERATIONAL_WRITERS,
+    delete: ADMIN_AND_MANAGER,
   },
   "operations.distributors": {
     read: ALL_AUTHENTICATED_ROLES,
@@ -99,10 +117,15 @@ const ERP_CLIENT_RESOURCE_ACCESS: Record<ErpResourceId, ResourceAccessPolicy> = 
   "operations.incidents": {
     read: ALL_AUTHENTICATED_ROLES,
     write: OPERATIONAL_WRITERS,
+    create: OPERATIONAL_WRITERS,
+    update: OPERATIONAL_WRITERS,
+    delete: ADMIN_AND_MANAGER,
   },
   "operations.documents": {
     read: ALL_AUTHENTICATED_ROLES,
     write: OPERATIONAL_WRITERS,
+    create: OPERATIONAL_WRITERS,
+    update: OPERATIONAL_WRITERS,
     delete: ADMIN_AND_MANAGER,
   },
   "operations.calendar": {

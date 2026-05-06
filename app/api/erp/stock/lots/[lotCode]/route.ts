@@ -5,8 +5,8 @@ import {
   assertCanReadErpResource,
 } from "@/lib/server/erp-access-control";
 import { readServerSession } from "@/lib/server/auth-session";
-import { readErpResource } from "@/lib/server/erp-state";
-import { detectLotLocationMismatch } from "@/lib/server/inventory-movements";
+import { InventoryLotNotFoundError } from "@/lib/server/inventory-lots";
+import { getLotLocationMismatchPayload } from "@/lib/server/stock-lots";
 
 export const runtime = "nodejs";
 
@@ -36,27 +36,17 @@ export async function GET(_: Request, context: RouteContext) {
     assertCanReadErpResource(session, "inventory.movements");
     assertCanReadErpResource(session, "operations.lots");
 
-    const lotsResource = await readErpResource("operations.lots");
-    const lot = lotsResource.data.find((candidate) => candidate.code === lotCode);
-
-    if (!lot) {
-      return NextResponse.json(
-        { error: "Lote nao encontrado." },
-        { status: 404 },
-      );
-    }
-
-    const mismatchResult = await detectLotLocationMismatch(lot);
-
-    return NextResponse.json({
-      stableLocationId: mismatchResult.derivedLocation.stableLocationId,
-      inTransitToLocationId: mismatchResult.derivedLocation.inTransitToLocationId,
-      confidence: mismatchResult.derivedLocation.confidence,
-      mismatch: mismatchResult.hasMismatch,
-    });
+    return NextResponse.json(await getLotLocationMismatchPayload(lotCode));
   } catch (error) {
     if (error instanceof ErpAccessDeniedError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
+    if (error instanceof InventoryLotNotFoundError) {
+      return NextResponse.json(
+        { error: "Lote nao encontrado." },
+        { status: error.status },
+      );
     }
 
     return NextResponse.json(

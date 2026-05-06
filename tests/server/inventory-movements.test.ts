@@ -314,6 +314,34 @@ describe("inventory movements item store", () => {
     );
   });
 
+  it("rejects creates when productId is tombstoned in the itemized product store", async () => {
+    const firestore = new FakeFirestoreAdminDb();
+    setFirebaseAdminDbForTests(firestore);
+    await writeErpResource(
+      "operations.products",
+      [
+        PRODUCT_LINES.find(
+          (product) => product.sku === SAMPLE_MOVEMENT.productId,
+        ),
+      ],
+      { baseVersion: 0 },
+    );
+    firestore.seed("operationsProducts", SAMPLE_MOVEMENT.productId, {
+      sku: SAMPLE_MOVEMENT.productId,
+      deleted: true,
+      deletedAt: "2026-05-01T10:00:00.000Z",
+      updatedAt: "2026-05-01T10:00:00.000Z",
+      version: 2,
+    });
+
+    await assert.rejects(
+      () => createInventoryMovement(SAMPLE_MOVEMENT),
+      (error) =>
+        error instanceof InventoryMovementInvalidProductIdError &&
+        error.productId === SAMPLE_MOVEMENT.productId,
+    );
+  });
+
   it("rejects creates when lotCode does not exist in operations.lots", async () => {
     const firestore = new FakeFirestoreAdminDb();
     setFirebaseAdminDbForTests(firestore);
@@ -328,6 +356,31 @@ describe("inventory movements item store", () => {
       (error) =>
         error instanceof InventoryMovementInvalidLotCodeError &&
         error.status === 422,
+    );
+  });
+
+  it("rejects creates when lotCode is tombstoned in the itemized lot store", async () => {
+    const firestore = new FakeFirestoreAdminDb();
+    setFirebaseAdminDbForTests(firestore);
+    await seedLotsResource([SAMPLE_COMPATIBLE_LOT_WITH_PRODUCT_ID]);
+    firestore.seed("inventoryLots", SAMPLE_COMPATIBLE_LOT_WITH_PRODUCT_ID.code, {
+      code: SAMPLE_COMPATIBLE_LOT_WITH_PRODUCT_ID.code,
+      deleted: true,
+      deletedAt: "2026-05-01T10:00:00.000Z",
+      updatedAt: "2026-05-01T10:00:00.000Z",
+      version: 2,
+    });
+
+    await assert.rejects(
+      () =>
+        createInventoryMovement({
+          ...SAMPLE_MOVEMENT,
+          id: "mov-lote-tombstoned-create",
+          lotCode: SAMPLE_COMPATIBLE_LOT_WITH_PRODUCT_ID.code,
+        }),
+      (error) =>
+        error instanceof InventoryMovementInvalidLotCodeError &&
+        error.lotCode === SAMPLE_COMPATIBLE_LOT_WITH_PRODUCT_ID.code,
     );
   });
 
@@ -688,6 +741,45 @@ describe("inventory movements item store", () => {
       { locationId: "quality-hold", balance: 0 },
     ]);
     assert.equal(payload.count, 3);
+  });
+
+  it("does not include tombstoned legacy locations in consolidated balances", async () => {
+    const firestore = new FakeFirestoreAdminDb();
+    setFirebaseAdminDbForTests(firestore);
+    firestore.seed(
+      "erpState",
+      "inventory.movements",
+      EMPTY_LEGACY_MOVEMENTS_RESOURCE,
+    );
+    await writeErpResource(
+      "inventory.locations",
+      [
+        {
+          id: "local-tombstoned",
+          name: "Local Tombstoned",
+          type: "Centro de Distribuição",
+          address: "Teste",
+          manager: "Time QA",
+          capacityTotal: 1000,
+          status: "Ativa",
+        },
+      ],
+      { baseVersion: 0 },
+    );
+    firestore.seed("inventoryLocations", "local-tombstoned", {
+      id: "local-tombstoned",
+      deleted: true,
+      deletedAt: "2026-05-01T10:00:00.000Z",
+      updatedAt: "2026-05-01T10:00:00.000Z",
+      version: 2,
+    });
+
+    const payload = await listLocationStockBalances();
+
+    assert.equal(
+      payload.items.some((item) => item.locationId === "local-tombstoned"),
+      false,
+    );
   });
 
   it("derives a high-confidence stable location when the lot history is clear", async () => {

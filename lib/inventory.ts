@@ -129,6 +129,12 @@ type LotDerivedLocationResponse = {
   error?: unknown;
 };
 
+type LotDerivedLocationBatchResponse = {
+  items?: unknown;
+  errors?: unknown;
+  error?: unknown;
+};
+
 export class MovementRequestError extends Error {
   status: number;
 
@@ -1318,6 +1324,59 @@ export async function fetchLotDerivedLocation(lotCode: string) {
   }
 
   return derivedLocation;
+}
+
+export async function fetchLotsDerivedLocations(lotCodes: readonly string[]) {
+  const response = await fetch(LOT_LOCATION_ENDPOINT_PREFIX, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    body: JSON.stringify({
+      lotCodes,
+    }),
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | LotDerivedLocationBatchResponse
+    | null;
+
+  if (!response.ok) {
+    const message =
+      payload && typeof payload.error === "string"
+        ? payload.error
+        : "Nao foi possivel carregar as localizacoes derivadas dos lotes.";
+
+    throw new LotLocationRequestError(message, response.status);
+  }
+
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new LotLocationRequestError(
+      "Resposta invalida ao carregar as localizacoes derivadas dos lotes.",
+      response.status,
+    );
+  }
+
+  const locationsByLot: Record<string, LotDerivedLocationItem> = {};
+
+  for (const item of payload.items) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+
+    const candidate = item as Record<string, unknown>;
+    const lotCode = candidate.lotCode;
+    const derivedLocation = normalizeLotDerivedLocationItem(candidate);
+
+    if (typeof lotCode === "string" && derivedLocation) {
+      locationsByLot[lotCode] = derivedLocation;
+    }
+  }
+
+  return {
+    locationsByLot,
+    hasErrors: Array.isArray(payload.errors) && payload.errors.length > 0,
+  };
 }
 
 export async function createMovement(movement: VersionedMovementItem) {

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 
 import {
   ErpAccessDeniedError,
+  assertCanDeleteErpResource,
   assertCanReadErpResource,
-  assertCanWriteErpResource,
+  assertCanUpdateErpResource,
 } from "@/lib/server/erp-access-control";
 import {
   getAuditErrorMetadata,
@@ -86,7 +87,7 @@ export async function PUT(request: Request, context: RouteContext) {
   const { locationId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanUpdateErpResource(session, LOCATIONS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireInventoryLocationBaseVersion(
       body.baseVersion,
@@ -144,7 +145,7 @@ export async function DELETE(request: Request, context: RouteContext) {
   const { locationId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, LOCATIONS_RESOURCE_ID);
+    assertCanDeleteErpResource(session, LOCATIONS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireInventoryLocationBaseVersion(
       body.baseVersion,

@@ -8,6 +8,7 @@ import { ERP_DATA_EVENT } from "@/lib/app-events";
 import { getSectionById, type DashboardSection } from "@/lib/dashboard-sections";
 import {
   fetchLotDerivedLocation,
+  fetchLotsDerivedLocations,
   formatDateTime,
   formatUnits,
   getMovementStatusLabel,
@@ -473,32 +474,14 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
       };
     }
 
-    Promise.allSettled(
-      lots.map((lot) =>
-        fetchLotDerivedLocation(lot.code).then((payload) => ({
-          lotCode: lot.code,
-          payload,
-        })),
-      ),
-    )
-      .then((results) => {
+    fetchLotsDerivedLocations(lots.map((lot) => lot.code))
+      .then((payload) => {
         if (!isActive) {
           return;
         }
 
-        const nextDerivedLocations: Record<string, LotDerivedLocationItem> = {};
-        let hasFailure = false;
-
-        for (const result of results) {
-          if (result.status === "fulfilled") {
-            nextDerivedLocations[result.value.lotCode] = result.value.payload;
-          } else {
-            hasFailure = true;
-          }
-        }
-
-        setDerivedLocationsByLot(nextDerivedLocations);
-        setDerivedLocationsPreviewFailed(hasFailure);
+        setDerivedLocationsByLot(payload.locationsByLot);
+        setDerivedLocationsPreviewFailed(payload.hasErrors);
       })
       .catch(() => {
         if (!isActive) {
@@ -519,6 +502,16 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
 
     if (!selectedLot) {
       setDerivedLotLocation(null);
+      setDerivedLotLocationFailed(false);
+      return () => {
+        isActive = false;
+      };
+    }
+
+    const cachedDerivedLocation = derivedLocationsByLot[selectedLot.code];
+
+    if (cachedDerivedLocation) {
+      setDerivedLotLocation(cachedDerivedLocation);
       setDerivedLotLocationFailed(false);
       return () => {
         isActive = false;
@@ -546,7 +539,7 @@ export function TraceabilityScreen({ section }: { section: DashboardSection }) {
     return () => {
       isActive = false;
     };
-  }, [movements, selectedLot]);
+  }, [derivedLocationsByLot, movements, selectedLot]);
 
   const derivedStableLocationName = useMemo(() => {
     if (!derivedLotLocation?.stableLocationId) {

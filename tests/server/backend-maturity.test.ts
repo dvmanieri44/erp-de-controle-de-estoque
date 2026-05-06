@@ -11,7 +11,11 @@ import {
 } from "@/app/api/erp/state/[resource]/route";
 import { INITIAL_LOCATIONS } from "@/lib/inventory";
 import { PRODUCT_LINES } from "@/lib/operations-data";
-import { assertCanWriteErpResource } from "@/lib/server/erp-access-control";
+import {
+  assertCanDeleteErpResource,
+  assertCanUpdateErpResource,
+  assertCanWriteErpResource,
+} from "@/lib/server/erp-access-control";
 import {
   loadAuthCredentialsForAccounts,
   upsertAuthCredential,
@@ -93,6 +97,36 @@ describe("backend maturity", () => {
         ),
       /nao pode alterar/i,
     );
+  });
+
+  it("separates update from delete permissions for operational resources", () => {
+    const operatorSession = {
+      account: {
+        ...SAMPLE_ADMIN_ACCOUNT,
+        role: "operador" as const,
+      },
+      username: "operador",
+      role: "operador" as const,
+      expiresAt: Date.now() + 60_000,
+    };
+
+    for (const resource of [
+      "operations.incidents",
+      "operations.tasks",
+      "operations.pending",
+      "inventory.movements",
+      "operations.lots",
+      "operations.documents",
+      "operations.quality-events",
+    ] as const) {
+      assert.doesNotThrow(() =>
+        assertCanUpdateErpResource(operatorSession, resource),
+      );
+      assert.throws(
+        () => assertCanDeleteErpResource(operatorSession, resource),
+        /nao pode excluir/i,
+      );
+    }
   });
 
   it("rejects invalid payloads before persistence", async () => {

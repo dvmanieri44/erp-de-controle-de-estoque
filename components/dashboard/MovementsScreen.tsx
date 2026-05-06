@@ -4,7 +4,17 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ERP_DATA_EVENT } from "@/lib/app-events";
-import type { LotItem, ProductLineItem } from "@/lib/operations-data";
+import {
+  buildLocalLocationStockBalanceMap,
+  buildLotOptionValue,
+  buildProductOptionValue,
+  getLocationStockBalance,
+  isLotCompatibleWithProduct,
+  resolveLotProduct,
+  resolveLotSelection,
+  resolveProductSelection,
+  revertMovementFromLocationStockBalances,
+} from "@/components/dashboard/inventory/movement-form-helpers";
 import {
   DATE_RANGE_OPTIONS,
   INITIAL_LOCATIONS,
@@ -13,7 +23,6 @@ import {
   buildTransferCode,
   createMovement,
   deleteMovement,
-  findMatchingProductReference,
   fetchLocationStockBalances,
   formatDateTime,
   formatSignedUnits,
@@ -101,188 +110,6 @@ const LOT_CODE_REQUIRED_MESSAGE =
   "Lote reconhecido no catalogo, mas sem codigo vinculado. Selecione o lote novamente antes de salvar.";
 const LOT_PRODUCT_MISMATCH_MESSAGE =
   "O lote selecionado pertence a outro produto. Ajuste produto ou lote antes de salvar.";
-
-function buildProductOptionValue(product: Pick<ProductLineItem, "product" | "sku">) {
-  return `${product.product} (${product.sku})`;
-}
-
-function buildLotOptionValue(lot: Pick<LotItem, "code" | "product">) {
-  return `${lot.code} (${lot.product})`;
-}
-
-function resolveProductSelection(
-  products: readonly ProductLineItem[],
-  value: string,
-) {
-  const normalizedValue = normalizeReferenceText(value);
-
-  if (!normalizedValue) {
-    return null;
-  }
-
-  return (
-    products.find((product) => {
-      return (
-        normalizeReferenceText(product.sku) === normalizedValue ||
-        normalizeReferenceText(product.product) === normalizedValue ||
-        normalizeReferenceText(buildProductOptionValue(product)) === normalizedValue
-      );
-    }) ??
-    findMatchingProductReference(products, value) ??
-    null
-  );
-}
-
-function resolveLotSelection(lots: readonly LotItem[], value: string) {
-  const normalizedValue = normalizeReferenceText(value);
-
-  if (!normalizedValue) {
-    return null;
-  }
-
-  return (
-    lots.find((lot) => {
-      return (
-        normalizeReferenceText(lot.code) === normalizedValue ||
-        normalizeReferenceText(buildLotOptionValue(lot)) === normalizedValue
-      );
-    }) ?? null
-  );
-}
-
-function resolveLotProduct(
-  products: readonly ProductLineItem[],
-  lot: LotItem,
-) {
-  if (lot.productId) {
-    const normalizedProductId = normalizeReferenceText(lot.productId);
-    const productBySku = products.find(
-      (product) => normalizeReferenceText(product.sku) === normalizedProductId,
-    );
-
-    if (productBySku) {
-      return productBySku;
-    }
-  }
-
-  return resolveProductSelection(products, lot.product);
-}
-
-function isLotCompatibleWithProduct(
-  lot: LotItem,
-  product: ProductLineItem,
-  products: readonly ProductLineItem[],
-) {
-  const lotProduct = resolveLotProduct(products, lot);
-
-  if (lotProduct) {
-    return normalizeReferenceText(lotProduct.sku) === normalizeReferenceText(product.sku);
-  }
-
-  return normalizeReferenceText(lot.product) === normalizeReferenceText(product.product);
-}
-
-function applyLocationStockDelta(
-  balances: Map<string, number>,
-  locationId: string | undefined,
-  delta: number,
-) {
-  if (!locationId || delta === 0) {
-    return;
-  }
-
-  balances.set(locationId, (balances.get(locationId) ?? 0) + delta);
-}
-
-function getTransferStockStatus(movement: Pick<MovementItem, "transferStatus">) {
-  return movement.transferStatus ?? "recebida";
-}
-
-function isMovementCancelledForStock(movement: MovementItem) {
-  if (movement.type === "transferencia") {
-    return getTransferStockStatus(movement) === "cancelada";
-  }
-
-  return (movement.status ?? "concluida") === "cancelada";
-}
-
-function buildLocalLocationStockBalanceMap(
-  movements: readonly MovementItem[],
-): LocationStockBalanceMap {
-  const balances = new Map<string, number>();
-
-  for (const movement of movements) {
-    if (isMovementCancelledForStock(movement)) {
-      continue;
-    }
-
-    if (movement.type === "entrada") {
-      applyLocationStockDelta(balances, movement.locationId, movement.quantity);
-      continue;
-    }
-
-    if (movement.type === "saida") {
-      applyLocationStockDelta(balances, movement.locationId, -movement.quantity);
-      continue;
-    }
-
-    const transferStatus = getTransferStockStatus(movement);
-
-    if (transferStatus === "em_transito" || transferStatus === "recebida") {
-      applyLocationStockDelta(balances, movement.fromLocationId, -movement.quantity);
-    }
-
-    if (transferStatus === "recebida") {
-      applyLocationStockDelta(balances, movement.toLocationId, movement.quantity);
-    }
-  }
-
-  return balances;
-}
-
-function revertMovementFromLocationStockBalances(
-  balances: ReadonlyMap<string, number>,
-  movement: MovementItem | null,
-): LocationStockBalanceMap {
-  const adjusted = new Map(balances);
-
-  if (!movement || isMovementCancelledForStock(movement)) {
-    return adjusted;
-  }
-
-  if (movement.type === "entrada") {
-    applyLocationStockDelta(adjusted, movement.locationId, -movement.quantity);
-    return adjusted;
-  }
-
-  if (movement.type === "saida") {
-    applyLocationStockDelta(adjusted, movement.locationId, movement.quantity);
-    return adjusted;
-  }
-
-  const transferStatus = getTransferStockStatus(movement);
-
-  if (transferStatus === "em_transito" || transferStatus === "recebida") {
-    applyLocationStockDelta(adjusted, movement.fromLocationId, movement.quantity);
-  }
-
-  if (transferStatus === "recebida") {
-    applyLocationStockDelta(adjusted, movement.toLocationId, -movement.quantity);
-  }
-
-  return adjusted;
-}
-
-function getLocationStockBalance(
-  balances: ReadonlyMap<string, number>,
-  locationId: string | undefined,
-) {
-  if (!locationId) {
-    return 0;
-  }
-
-  return Math.max(0, balances.get(locationId) ?? 0);
-}
 
 function MetricCard({
   title,

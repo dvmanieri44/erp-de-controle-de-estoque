@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 
 import {
   ErpAccessDeniedError,
+  assertCanDeleteErpResource,
   assertCanReadErpResource,
-  assertCanWriteErpResource,
+  assertCanUpdateErpResource,
 } from "@/lib/server/erp-access-control";
 import {
   getAuditErrorMetadata,
@@ -77,7 +78,7 @@ export async function PUT(request: Request, context: RouteContext) {
   const { taskId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, TASKS_RESOURCE_ID);
+    assertCanUpdateErpResource(session, TASKS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireTaskBaseVersion(body.baseVersion, "atualizar");
     const before = await getTaskById(taskId);
@@ -130,7 +131,7 @@ export async function DELETE(request: Request, context: RouteContext) {
   const { taskId } = await context.params;
 
   try {
-    assertCanWriteErpResource(session, TASKS_RESOURCE_ID);
+    assertCanDeleteErpResource(session, TASKS_RESOURCE_ID);
     const body = await readJsonObjectBody(request);
     const baseVersion = requireTaskBaseVersion(body.baseVersion, "excluir");
     const before = await getTaskById(taskId);

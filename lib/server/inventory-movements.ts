@@ -643,8 +643,9 @@ async function resolveLegacyLotLocationIdByName(locationName: string) {
     return null;
   }
 
-  const locationsResource = await readErpResource("inventory.locations");
-  const matchingLocation = locationsResource.data.find(
+  const { listLocations } = await import("@/lib/server/inventory-locations");
+  const locationsPayload = await listLocations();
+  const matchingLocation = locationsPayload.items.find(
     (candidate) =>
       normalizeCatalogReference(candidate.name) === normalizedLocationName,
   );
@@ -657,10 +658,18 @@ async function assertMovementProductIntegrity(movement: MovementItem) {
     return movement;
   }
 
-  const productsResource = await readErpResource("operations.products");
-  const product = productsResource.data.find(
-    (candidate) => candidate.sku === movement.productId,
+  const { getProductBySku, OperationsProductNotFoundError } = await import(
+    "@/lib/server/operations-products"
   );
+  let product = null;
+
+  try {
+    product = await getProductBySku(movement.productId);
+  } catch (error) {
+    if (!(error instanceof OperationsProductNotFoundError)) {
+      throw error;
+    }
+  }
 
   if (!product) {
     throw new InventoryMovementInvalidProductIdError(movement.productId);
@@ -677,10 +686,18 @@ async function assertMovementLotIntegrity(movement: MovementItem) {
     return movement;
   }
 
-  const lotsResource = await readErpResource("operations.lots");
-  const lot = lotsResource.data.find(
-    (candidate) => candidate.code === movement.lotCode,
+  const { InventoryLotNotFoundError, getLotByCode } = await import(
+    "@/lib/server/inventory-lots"
   );
+  let lot = null;
+
+  try {
+    lot = await getLotByCode(movement.lotCode);
+  } catch (error) {
+    if (!(error instanceof InventoryLotNotFoundError)) {
+      throw error;
+    }
+  }
 
   if (!lot) {
     throw new InventoryMovementInvalidLotCodeError(movement.lotCode);
@@ -1041,9 +1058,10 @@ export async function listInventoryMovements(): Promise<ListInventoryMovementsRe
 }
 
 export async function listLocationStockBalances(): Promise<ListLocationStockBalancesResult> {
+  const { listLocations } = await import("@/lib/server/inventory-locations");
   const [movementsPayload, locationsPayload] = await Promise.all([
     listInventoryMovements(),
-    readErpResource("inventory.locations"),
+    listLocations(),
   ]);
   const balances = new Map<string, number>(
     calculateLocationStockBalances(movementsPayload.items).map((item) => [
@@ -1052,7 +1070,7 @@ export async function listLocationStockBalances(): Promise<ListLocationStockBala
     ]),
   );
 
-  for (const location of locationsPayload.data) {
+  for (const location of locationsPayload.items) {
     balances.set(location.id, balances.get(location.id) ?? 0);
   }
 
