@@ -4,27 +4,39 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLocale } from "@/components/providers/LocaleProvider";
+import { ERP_DATA_EVENT } from "@/lib/app-events";
 import { formatMessage } from "@/lib/i18n";
 import {
   INITIAL_LOCATIONS,
+  buildLocationStockBalanceMap,
+  createLocation,
   createLocationId,
+  deleteLocation,
+  fetchLocationStockBalances,
   formatUnits,
-  getLocationAvailableCapacity,
+  getPreferredLocationAvailableCapacity,
+  getPreferredLocationUsedCapacity,
   getLocationStatusLabel,
   getLocationStatusOptions,
   getLocationTypeLabel,
   getLocationTypeOptions,
-  getLocationUsedCapacity,
+  LocationRequestError,
+  LocationVersionConflictError,
   loadLocations,
   loadMovements,
   normalizeText,
   parseCapacity,
-  saveLocations,
+  refreshLocationStockBalances,
+  refreshLocations,
+  updateLocation,
   type LocationItem,
+  type LocationStockBalanceMap,
   type LocationStatus,
   type LocationType,
   type MovementItem,
+  type VersionedLocationItem,
 } from "@/lib/inventory";
+import { useErpPermissions } from "@/lib/use-erp-permissions";
 
 type ToastState = {
   id: number;
@@ -214,6 +226,24 @@ const COPY = {
   },
 } as const;
 
+const LOCATION_CONFLICT_MESSAGES: Record<keyof typeof COPY, string> = {
+  "pt-BR": "Conflito de versao: esta localizacao foi alterada em outra sessao. Recarregamos a lista e nao salvamos sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.",
+  "en-US": "Version conflict: this location was changed in another session. We reloaded the list and did not save your change to avoid overwriting data. Review and try again.",
+  "es-ES": "Conflicto de version: esta ubicacion fue alterada en otra sesion. Recargamos la lista y no guardamos tu cambio para evitar sobrescribir datos. Revisa e intenta de nuevo.",
+};
+
+const LOCATION_CREATE_CONFLICT_MESSAGES: Record<keyof typeof COPY, string> = {
+  "pt-BR": "Nao foi possivel salvar porque houve conflito no cadastro da localizacao. Recarregamos a lista e nao sobrescrevemos nada. Revise os dados e tente novamente.",
+  "en-US": "Could not save because there was a conflict while creating the location. We reloaded the list and did not overwrite anything. Review and try again.",
+  "es-ES": "No se pudo guardar porque hubo un conflicto al crear la ubicacion. Recargamos la lista y no sobrescribimos nada. Revisa e intenta de nuevo.",
+};
+
+const LOCATION_IN_USE_MESSAGES: Record<keyof typeof COPY, string> = {
+  "pt-BR": "A localizacao possui movimentacoes, lotes ou saldo ativo e nao pode ser excluida.",
+  "en-US": "This location has movements, lots, or active stock and cannot be deleted.",
+  "es-ES": "Esta ubicacion tiene movimientos, lotes o saldo activo y no se puede eliminar.",
+};
+
 function LocationIcon() {
   return (
     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
@@ -310,22 +340,21 @@ function MetricCard({ title, value }: { title: string; value: string }) {
 
 function LocationCard({
   location,
-  movements,
+  used,
+  available,
   locale,
   copy,
   onEdit,
   onDelete,
 }: {
   location: LocationItem;
-  movements: MovementItem[];
+  used: number;
+  available: number;
   locale: keyof typeof COPY;
   copy: (typeof COPY)[keyof typeof COPY];
   onEdit: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
-  const used = Math.max(0, getLocationUsedCapacity(location.id, movements));
-  const available = Math.max(0, getLocationAvailableCapacity(location, movements));
-
   return (
     <article className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 shadow-[0_6px_18px_var(--shadow-color)] transition-colors">
       <div className="flex items-start justify-between gap-3">
@@ -349,14 +378,16 @@ function LocationCard({
               <path d="m12.5 7.5 4 4" />
             </svg>
           </ActionButton>
-          <ActionButton onClick={onDelete} tone="danger" label={formatMessage(copy.deleteLocationAria, { name: location.name })}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-              <path d="M5 7h14" />
-              <path d="M9 7V5h6v2" />
-              <path d="M8 10v7M12 10v7M16 10v7" />
-              <path d="M6 7l1 12h10l1-12" />
-            </svg>
-          </ActionButton>
+          {onDelete ? (
+            <ActionButton onClick={onDelete} tone="danger" label={formatMessage(copy.deleteLocationAria, { name: location.name })}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                <path d="M5 7h14" />
+                <path d="M9 7V5h6v2" />
+                <path d="M8 10v7M12 10v7M16 10v7" />
+                <path d="M6 7l1 12h10l1-12" />
+              </svg>
+            </ActionButton>
+          ) : null}
         </div>
       </div>
 
@@ -416,62 +447,112 @@ function Toast({ toast }: { toast: NonNullable<ToastState> }) {
 }
 
 export function LocationsScreen() {
+  const { canDelete } = useErpPermissions();
+  const canDeleteLocations = canDelete("inventory.locations");
   const { locale } = useLocale();
   const copy = COPY[locale];
-  const [locations, setLocations] = useState<LocationItem[]>(INITIAL_LOCATIONS);
+  const stockBalanceFallbackMessage = useMemo(
+    () =>
+      ({
+        "pt-BR": "O saldo consolidado por localização não pôde ser carregado. Exibindo fallback local temporariamente.",
+        "en-US": "The consolidated stock by location could not be loaded. Showing a temporary local fallback.",
+        "es-ES": "No se pudo cargar el saldo consolidado por ubicación. Se muestra un fallback local temporal.",
+      })[locale],
+    [locale],
+  );
+  const [locations, setLocations] = useState<VersionedLocationItem[]>(INITIAL_LOCATIONS);
   const [movements, setMovements] = useState<MovementItem[]>([]);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const [locationStockBalances, setLocationStockBalances] = useState<LocationStockBalanceMap>(() => new Map());
+  const [stockBalanceError, setStockBalanceError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedType, setSelectedType] = useState<LocationType | "Todos">("Todos");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<LocationFormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [deleteTarget, setDeleteTarget] = useState<LocationItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<VersionedLocationItem | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  const hasInitializedInventoryRef = useRef(false);
   const locationTypeOptions = useMemo(() => getLocationTypeOptions(locale), [locale]);
   const locationStatusOptions = useMemo(() => getLocationStatusOptions(locale), [locale]);
   const deleteDescriptionParts = useMemo(() => copy.deleteDescription.split("{name}"), [copy.deleteDescription]);
 
   useEffect(() => {
-    try {
-      setLocations(loadLocations());
-      setMovements(loadMovements());
-      setHasLoaded(true);
-    } catch {
-      setToast({
-        id: Date.now(),
-        message: copy.loadSavedDataError,
-        tone: "error",
-      });
-    }
+    let isActive = true;
 
-    function syncInventory() {
+    async function syncInventory() {
       try {
-        setLocations(loadLocations());
-        setMovements(loadMovements());
-        setHasLoaded(true);
+        const cachedLocations = loadLocations();
+        const nextMovements = loadMovements();
+
+        if (!isActive) {
+          return;
+        }
+
+        setLocations(cachedLocations);
+        setMovements(nextMovements);
+        hasInitializedInventoryRef.current = true;
       } catch {
-        setToast({
-          id: Date.now(),
-          message: copy.syncDataError,
-          tone: "error",
-        });
+        if (isActive) {
+          setToast({
+            id: Date.now(),
+            message: hasInitializedInventoryRef.current ? copy.syncDataError : copy.loadSavedDataError,
+            tone: "error",
+          });
+        }
+        return;
+      }
+
+      try {
+        const serverLocations = await refreshLocations();
+
+        if (!isActive) {
+          return;
+        }
+
+        setLocations(serverLocations);
+      } catch {
+        if (isActive && hasInitializedInventoryRef.current) {
+          setToast({
+            id: Date.now(),
+            message: copy.syncDataError,
+            tone: "error",
+          });
+        }
+      }
+
+      try {
+        const balances = await fetchLocationStockBalances();
+
+        if (!isActive) {
+          return;
+        }
+
+        setLocationStockBalances(buildLocationStockBalanceMap(balances));
+        setStockBalanceError(null);
+      } catch {
+        if (isActive) {
+          setLocationStockBalances(new Map());
+          setStockBalanceError(stockBalanceFallbackMessage);
+        }
       }
     }
 
-    window.addEventListener("storage", syncInventory);
-    return () => window.removeEventListener("storage", syncInventory);
-  }, [copy.loadSavedDataError, copy.syncDataError]);
+    void syncInventory();
 
-  useEffect(() => {
-    if (!hasLoaded) {
-      return;
+    function handleSync() {
+      void syncInventory();
     }
 
-    saveLocations(locations);
-  }, [hasLoaded, locations]);
+    window.addEventListener("storage", handleSync);
+    window.addEventListener(ERP_DATA_EVENT, handleSync);
+    return () => {
+      isActive = false;
+      window.removeEventListener("storage", handleSync);
+      window.removeEventListener(ERP_DATA_EVENT, handleSync);
+    };
+  }, [copy.loadSavedDataError, copy.syncDataError, stockBalanceFallbackMessage]);
 
   useEffect(() => {
     if (!toast) {
@@ -538,17 +619,21 @@ export function LocationsScreen() {
           location.status,
           getLocationStatusLabel(location.status, locale),
           formatUnits(location.capacityTotal, locale),
-          formatUnits(getLocationUsedCapacity(location.id, movements), locale),
+          formatUnits(getPreferredLocationUsedCapacity(location.id, movements, locationStockBalances), locale),
         ].join(" "),
       ).includes(query);
     });
-  }, [locale, locations, movements, search, selectedType]);
+  }, [locale, locationStockBalances, locations, movements, search, selectedType]);
 
   const metrics = useMemo(() => {
     const factories = locations.filter((location) => location.type === "Fábrica").length;
     const distributionCenters = locations.filter((location) => location.type === "Centro de Distribuição").length;
     const totalCapacity = locations.reduce((sum, location) => sum + location.capacityTotal, 0);
-    const totalUsed = locations.reduce((sum, location) => sum + Math.max(0, getLocationUsedCapacity(location.id, movements)), 0);
+    const totalUsed = locations.reduce(
+      (sum, location) =>
+        sum + getPreferredLocationUsedCapacity(location.id, movements, locationStockBalances),
+      0,
+    );
 
     return {
       total: locations.length,
@@ -557,7 +642,7 @@ export function LocationsScreen() {
       totalCapacity,
       totalAvailable: Math.max(0, totalCapacity - totalUsed),
     };
-  }, [locations, movements]);
+  }, [locationStockBalances, locations, movements]);
 
   const isEditing = editingId !== null;
 
@@ -594,7 +679,7 @@ export function LocationsScreen() {
     const normalizedName = normalizeText(values.name);
     const parsedCapacity = parseCapacity(values.capacity);
     const currentUsed = editingId
-      ? Math.max(0, getLocationUsedCapacity(editingId, movements))
+      ? getPreferredLocationUsedCapacity(editingId, movements, locationStockBalances)
       : 0;
 
     if (!values.name.trim()) {
@@ -624,7 +709,29 @@ export function LocationsScreen() {
     return nextErrors;
   }
 
-  function handleSubmit() {
+  async function reloadLocationsAfterConflict() {
+    try {
+      const serverLocations = await refreshLocations();
+      setLocations(serverLocations);
+    } catch {
+      setLocations(loadLocations());
+    }
+  }
+
+  async function reloadLocationStockBalances(force = false) {
+    try {
+      const balances = force
+        ? await refreshLocationStockBalances()
+        : await fetchLocationStockBalances();
+      setLocationStockBalances(buildLocationStockBalanceMap(balances));
+      setStockBalanceError(null);
+    } catch {
+      setLocationStockBalances(new Map());
+      setStockBalanceError(stockBalanceFallbackMessage);
+    }
+  }
+
+  async function handleSubmit() {
     const nextErrors = validateForm(form);
     setErrors(nextErrors);
 
@@ -633,62 +740,129 @@ export function LocationsScreen() {
     }
 
     const parsedCapacity = parseCapacity(form.capacity);
+    const nextLocation = {
+      name: form.name.trim(),
+      type: form.type,
+      address: form.address.trim(),
+      manager: form.manager.trim(),
+      capacityTotal: parsedCapacity,
+      status: form.status,
+    };
 
     if (isEditing) {
-      setLocations((current) =>
-        current.map((location) =>
-          location.id === editingId
-            ? {
-                ...location,
-                name: form.name.trim(),
-                type: form.type,
-                address: form.address.trim(),
-                manager: form.manager.trim(),
-                capacityTotal: parsedCapacity,
-                status: form.status,
-              }
-            : location,
-        ),
+      const currentEditingId = editingId;
+      const currentLocation = locations.find(
+        (location) => location.id === currentEditingId,
       );
+      const baseVersion =
+        typeof currentLocation?.version === "number" ? currentLocation.version : 1;
 
-      setToast({
-        id: Date.now(),
-        message: copy.locationUpdated,
-        tone: "success",
-      });
+      if (!currentEditingId) {
+        return;
+      }
+
+      try {
+        const updatedLocation = await updateLocation(
+          currentEditingId,
+          nextLocation,
+          baseVersion,
+        );
+
+        setLocations((current) =>
+          current.map((location) =>
+            location.id === currentEditingId ? updatedLocation : location,
+          ),
+        );
+        await reloadLocationStockBalances(true);
+        setToast({
+          id: Date.now(),
+          message: copy.locationUpdated,
+          tone: "success",
+        });
+        closeModal();
+      } catch (error) {
+        if (error instanceof LocationVersionConflictError) {
+          await reloadLocationsAfterConflict();
+          setToast({
+            id: Date.now(),
+            message: LOCATION_CONFLICT_MESSAGES[locale],
+            tone: "error",
+          });
+          return;
+        }
+
+        setToast({
+          id: Date.now(),
+          message: copy.syncDataError,
+          tone: "error",
+        });
+      }
     } else {
       const baseId = createLocationId(form.name) || `localizacao-${Date.now()}`;
       const nextId = locations.some((location) => location.id === baseId) ? `${baseId}-${Date.now()}` : baseId;
 
-      setLocations((current) => [
-        {
+      try {
+        const createdLocation = await createLocation({
           id: nextId,
-          name: form.name.trim(),
-          type: form.type,
-          address: form.address.trim(),
-          manager: form.manager.trim(),
-          capacityTotal: parsedCapacity,
-          status: form.status,
-        },
-        ...current,
-      ]);
+          ...nextLocation,
+        });
 
-      setToast({
-        id: Date.now(),
-        message: copy.locationCreated,
-        tone: "success",
-      });
+        setLocations((current) => [
+          createdLocation,
+          ...current.filter((location) => location.id !== createdLocation.id),
+        ]);
+        await reloadLocationStockBalances(true);
+        setToast({
+          id: Date.now(),
+          message: copy.locationCreated,
+          tone: "success",
+        });
+        closeModal();
+      } catch (error) {
+        if (error instanceof LocationRequestError && error.status === 409) {
+          await reloadLocationsAfterConflict();
+          setToast({
+            id: Date.now(),
+            message: LOCATION_CREATE_CONFLICT_MESSAGES[locale],
+            tone: "error",
+          });
+          return;
+        }
+
+        setToast({
+          id: Date.now(),
+          message: copy.syncDataError,
+          tone: "error",
+        });
+      }
     }
-
-    closeModal();
   }
 
-  function confirmDelete(location: LocationItem) {
+  function confirmDelete(location: VersionedLocationItem) {
+    if (!canDeleteLocations) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode excluir localizacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
     setDeleteTarget(location);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteTarget) {
+      return;
+    }
+
+    if (!canDeleteLocations) {
+      setDeleteTarget(null);
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode excluir localizacoes.",
+        tone: "error",
+      });
       return;
     }
 
@@ -709,13 +883,49 @@ export function LocationsScreen() {
       return;
     }
 
-    setLocations((current) => current.filter((location) => location.id !== deleteTarget.id));
-    setToast({
-      id: Date.now(),
-      message: copy.locationDeleted,
-      tone: "success",
-    });
-    setDeleteTarget(null);
+    const locationId = deleteTarget.id;
+    const baseVersion =
+      typeof deleteTarget.version === "number" ? deleteTarget.version : 1;
+
+    try {
+      await deleteLocation(locationId, baseVersion);
+      setLocations((current) => current.filter((location) => location.id !== locationId));
+      await reloadLocationStockBalances(true);
+      setToast({
+        id: Date.now(),
+        message: copy.locationDeleted,
+        tone: "success",
+      });
+      setDeleteTarget(null);
+    } catch (error) {
+      if (error instanceof LocationVersionConflictError) {
+        await reloadLocationsAfterConflict();
+        setToast({
+          id: Date.now(),
+          message: LOCATION_CONFLICT_MESSAGES[locale],
+          tone: "error",
+        });
+        setDeleteTarget(null);
+        return;
+      }
+
+      if (error instanceof LocationRequestError && error.status === 409) {
+        await reloadLocationsAfterConflict();
+        setToast({
+          id: Date.now(),
+          message: LOCATION_IN_USE_MESSAGES[locale],
+          tone: "error",
+        });
+        setDeleteTarget(null);
+        return;
+      }
+
+      setToast({
+        id: Date.now(),
+        message: copy.syncDataError,
+        tone: "error",
+      });
+    }
   }
 
   return (
@@ -747,6 +957,12 @@ export function LocationsScreen() {
         <MetricCard title={copy.totalCapacity} value={formatUnits(metrics.totalCapacity, locale)} />
         <MetricCard title={copy.available} value={formatUnits(metrics.totalAvailable, locale)} />
       </div>
+
+      {stockBalanceError ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {stockBalanceError}
+        </div>
+      ) : null}
 
       <div className="mt-6 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 shadow-[0_6px_18px_var(--shadow-color)]">
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
@@ -780,11 +996,12 @@ export function LocationsScreen() {
           <LocationCard
             key={location.id}
             location={location}
-            movements={movements}
+            used={getPreferredLocationUsedCapacity(location.id, movements, locationStockBalances)}
+            available={getPreferredLocationAvailableCapacity(location, movements, locationStockBalances)}
             locale={locale}
             copy={copy}
             onEdit={() => openEditModal(location)}
-            onDelete={() => confirmDelete(location)}
+            onDelete={canDeleteLocations ? () => confirmDelete(location) : undefined}
           />
         ))}
       </div>

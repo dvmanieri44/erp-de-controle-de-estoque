@@ -14,6 +14,8 @@ export type ProductLineItem = {
 export type LotItem = {
   code: string;
   product: string;
+  productId?: string;
+  locationId?: string;
   location: string;
   expiration: string;
   quantity: number;
@@ -38,6 +40,7 @@ export type CategoryItem = {
 };
 
 export type QualityEventItem = {
+  id?: string;
   title: string;
   lot: string;
   area: string;
@@ -70,6 +73,7 @@ export type NotificationItem = {
 };
 
 export type PendingItem = {
+  id?: string;
   title: string;
   owner: string;
   area: string;
@@ -78,6 +82,7 @@ export type PendingItem = {
 };
 
 export type TaskItem = {
+  id?: string;
   title: string;
   shift: string;
   owner: string;
@@ -96,6 +101,7 @@ export type DistributorItem = {
 };
 
 export type IncidentItem = {
+  id?: string;
   title: string;
   area: string;
   severity: "Alta" | "Média" | "Baixa";
@@ -104,6 +110,7 @@ export type IncidentItem = {
 };
 
 export type DocumentItem = {
+  id?: string;
   title: string;
   type: string;
   area: string;

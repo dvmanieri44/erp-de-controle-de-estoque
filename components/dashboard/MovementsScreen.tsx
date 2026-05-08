@@ -3,32 +3,54 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { ERP_DATA_EVENT } from "@/lib/app-events";
+import {
+  buildLocalLocationStockBalanceMap,
+  buildLotOptionValue,
+  buildProductOptionValue,
+  getLocationStockBalance,
+  isLotCompatibleWithProduct,
+  resolveLotProduct,
+  resolveLotSelection,
+  resolveProductSelection,
+  revertMovementFromLocationStockBalances,
+} from "@/components/dashboard/inventory/movement-form-helpers";
 import {
   DATE_RANGE_OPTIONS,
   INITIAL_LOCATIONS,
   MOVEMENT_TYPES,
+  buildLocationStockBalanceMap,
   buildTransferCode,
+  createMovement,
+  deleteMovement,
+  fetchLocationStockBalances,
   formatDateTime,
   formatSignedUnits,
   formatUnits,
-  getLocationAvailableCapacity,
-  getLocationUsedCapacity,
   getMovementStatusLabel,
   getTransferPriorityLabel,
   isMovementCancelled,
   loadLocations,
   loadMovements,
   matchesDateRange,
+  MovementVersionConflictError,
+  normalizeReferenceText,
   normalizeText,
-  saveMovements,
+  refreshLocationStockBalances,
+  refreshMovements,
   type DateRangeFilter,
   type LocationItem,
+  type LocationStockBalanceMap,
   type MovementItem,
   type MovementStatus,
   type MovementType,
   type TransferPriority,
   type TransferStatus,
+  type VersionedMovementItem,
+  updateMovement,
 } from "@/lib/inventory";
+import { loadLots, loadProductLines } from "@/lib/operations-store";
+import { useErpPermissions } from "@/lib/use-erp-permissions";
 
 type ToastState = {
   id: number;
@@ -44,6 +66,8 @@ type MovementSort = "newest" | "oldest" | "quantity_desc" | "quantity_asc" | "ty
 
 type MovementFormState = {
   product: string;
+  productId: string;
+  lotCode: string;
   type: MovementType;
   quantity: string;
   reason: string;
@@ -61,6 +85,8 @@ type FormErrors = Partial<Record<keyof MovementFormState, string>>;
 
 const EMPTY_FORM: MovementFormState = {
   product: "",
+  productId: "",
+  lotCode: "",
   type: "entrada",
   quantity: "",
   reason: "",
@@ -73,6 +99,17 @@ const EMPTY_FORM: MovementFormState = {
   transferStatus: "recebida",
   priority: "media",
 };
+
+const MOVEMENT_STALE_VERSION_MESSAGE =
+  "Sem versao local confiavel para esta movimentacao. Recarreguei a lista e nao salvei nada para evitar sobrescrita. Abra a movimentacao novamente e tente outra vez.";
+const MOVEMENT_VERSION_CONFLICT_MESSAGE =
+  "Conflito de versao: esta movimentacao foi alterada por outra sessao. Recarreguei a lista e nao salvei sua alteracao para evitar sobrescrita. Revise os dados e tente novamente.";
+const PRODUCT_ID_REQUIRED_MESSAGE =
+  "Produto reconhecido no catalogo, mas sem SKU vinculado. Selecione o produto novamente antes de salvar.";
+const LOT_CODE_REQUIRED_MESSAGE =
+  "Lote reconhecido no catalogo, mas sem codigo vinculado. Selecione o lote novamente antes de salvar.";
+const LOT_PRODUCT_MISMATCH_MESSAGE =
+  "O lote selecionado pertence a outro produto. Ajuste produto ou lote antes de salvar.";
 
 function MetricCard({
   title,
@@ -272,7 +309,7 @@ function MovementListItem({
   expanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   const quantity = getMovementDisplayQuantity(movement);
   const amountClass =
@@ -321,14 +358,16 @@ function MovementListItem({
                 <path d="m12.5 7.5 4 4" />
               </svg>
             </ActionButton>
-            <ActionButton label={`Excluir ${movement.product}`} onClick={onDelete} tone="danger">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                <path d="M5 7h14" />
-                <path d="M9 7V5h6v2" />
-                <path d="M8 10v7M12 10v7M16 10v7" />
-                <path d="M6 7l1 12h10l1-12" />
-              </svg>
-            </ActionButton>
+            {onDelete ? (
+              <ActionButton label={`Excluir ${movement.product}`} onClick={onDelete} tone="danger">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                  <path d="M5 7h14" />
+                  <path d="M9 7V5h6v2" />
+                  <path d="M8 10v7M12 10v7M16 10v7" />
+                  <path d="M6 7l1 12h10l1-12" />
+                </svg>
+              </ActionButton>
+            ) : null}
           </div>
         </div>
       </div>
@@ -355,9 +394,13 @@ function MovementListItem({
 }
 
 export function MovementsScreen() {
+  const { canDelete, canUpdate } = useErpPermissions();
+  const canDeleteMovements = canDelete("inventory.movements");
+  const canUpdateMovements = canUpdate("inventory.movements");
   const [locations, setLocations] = useState<LocationItem[]>(INITIAL_LOCATIONS);
-  const [movements, setMovements] = useState<MovementItem[]>([]);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const [movements, setMovements] = useState<VersionedMovementItem[]>([]);
+  const [locationStockBalances, setLocationStockBalances] = useState<LocationStockBalanceMap>(() => new Map());
+  const [isUsingStockFallback, setIsUsingStockFallback] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedType, setSelectedType] = useState<MovementFilter>("todos");
   const [dateRange, setDateRange] = useState<DateRangeFilter>("all");
@@ -368,17 +411,58 @@ export function MovementsScreen() {
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<MovementItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<VersionedMovementItem | null>(null);
   const [form, setForm] = useState<MovementFormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [toast, setToast] = useState<ToastState>(null);
+  const [productCatalog, setProductCatalog] = useState(() => loadProductLines());
+  const [lotCatalog, setLotCatalog] = useState(() => loadLots());
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  const fallbackWarningShownRef = useRef(false);
 
   useEffect(() => {
+    let isActive = true;
+
+    async function syncLocationStock(nextMovements: VersionedMovementItem[]) {
+      try {
+        const balances = buildLocationStockBalanceMap(
+          await fetchLocationStockBalances(),
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        setLocationStockBalances(balances);
+        setIsUsingStockFallback(false);
+        fallbackWarningShownRef.current = false;
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+        setIsUsingStockFallback(true);
+
+        if (!fallbackWarningShownRef.current) {
+          fallbackWarningShownRef.current = true;
+          setToast({
+            id: Date.now(),
+            message: "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
+            tone: "error",
+          });
+        }
+      }
+    }
+
     try {
-      setLocations(loadLocations());
-      setMovements(loadMovements());
-      setHasLoaded(true);
+      const nextLocations = loadLocations();
+      const nextMovements = loadMovements();
+      setLocations(nextLocations);
+      setMovements(nextMovements);
+      setProductCatalog(loadProductLines());
+      setLotCatalog(loadLots());
+      void syncLocationStock(nextMovements);
     } catch {
       setToast({
         id: Date.now(),
@@ -389,10 +473,22 @@ export function MovementsScreen() {
 
     function syncInventory() {
       try {
-        setLocations(loadLocations());
-        setMovements(loadMovements());
-        setHasLoaded(true);
+        if (!isActive) {
+          return;
+        }
+
+        const nextLocations = loadLocations();
+        const nextMovements = loadMovements();
+        setLocations(nextLocations);
+        setMovements(nextMovements);
+        setProductCatalog(loadProductLines());
+        setLotCatalog(loadLots());
+        void syncLocationStock(nextMovements);
       } catch {
+        if (!isActive) {
+          return;
+        }
+
         setToast({
           id: Date.now(),
           message: "Não foi possível sincronizar os dados.",
@@ -401,17 +497,41 @@ export function MovementsScreen() {
       }
     }
 
-    window.addEventListener("storage", syncInventory);
-    return () => window.removeEventListener("storage", syncInventory);
-  }, []);
+    async function syncInventoryFromServer() {
+      try {
+        const nextMovements = await refreshMovements();
 
-  useEffect(() => {
-    if (!hasLoaded) {
-      return;
+        if (!isActive) {
+          return;
+        }
+
+        setLocations(loadLocations());
+        setMovements(nextMovements);
+        setProductCatalog(loadProductLines());
+        setLotCatalog(loadLots());
+        await syncLocationStock(nextMovements);
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        setToast({
+          id: Date.now(),
+          message: "Não foi possível carregar as movimentações salvas.",
+          tone: "error",
+        });
+      }
     }
 
-    saveMovements(movements);
-  }, [hasLoaded, movements]);
+    void syncInventoryFromServer();
+    window.addEventListener("storage", syncInventory);
+    window.addEventListener(ERP_DATA_EVENT, syncInventory);
+    return () => {
+      isActive = false;
+      window.removeEventListener("storage", syncInventory);
+      window.removeEventListener(ERP_DATA_EVENT, syncInventory);
+    };
+  }, []);
 
   useEffect(() => {
     if (!toast) {
@@ -542,6 +662,58 @@ export function MovementsScreen() {
     };
   }, [movements]);
 
+  const currentMovement = useMemo(
+    () => (editingId ? movements.find((movement) => movement.id === editingId) ?? null : null),
+    [editingId, movements],
+  );
+
+  const formStockBalances = useMemo(
+    () => revertMovementFromLocationStockBalances(locationStockBalances, currentMovement),
+    [currentMovement, locationStockBalances],
+  );
+
+  const getLocationUsedCapacity = (
+    locationId: string,
+    candidateMovements?: readonly MovementItem[],
+  ) => {
+    if (isUsingStockFallback) {
+      const fallbackBalances = candidateMovements
+        ? buildLocalLocationStockBalanceMap(candidateMovements)
+        : locationStockBalances;
+      return getLocationStockBalance(fallbackBalances, locationId);
+    }
+
+    const balances = candidateMovements ? formStockBalances : locationStockBalances;
+    return getLocationStockBalance(balances, locationId);
+  };
+
+  const getLocationAvailableCapacity = (
+    location: LocationItem,
+    candidateMovements?: readonly MovementItem[],
+  ) => Math.max(0, location.capacityTotal - getLocationUsedCapacity(location.id, candidateMovements));
+
+  function handleProductChange(value: string) {
+    const matchedProduct = resolveProductSelection(productCatalog, value);
+
+    setForm((current) => ({
+      ...current,
+      product: matchedProduct?.product ?? value,
+      productId: matchedProduct?.sku ?? "",
+    }));
+  }
+
+  function handleLotChange(value: string) {
+    const matchedLot = resolveLotSelection(lotCatalog, value);
+    const matchedProduct = matchedLot ? resolveLotProduct(productCatalog, matchedLot) : null;
+
+    setForm((current) => ({
+      ...current,
+      lotCode: matchedLot?.code ?? value,
+      product: matchedProduct?.product ?? current.product,
+      productId: matchedProduct?.sku ?? current.productId,
+    }));
+  }
+
   function closeModal() {
     setIsModalOpen(false);
     setEditingId(null);
@@ -554,6 +726,8 @@ export function MovementsScreen() {
     setEditingId(movement?.id ?? null);
     setForm({
       product: movement?.product ?? "",
+      productId: movement?.productId ?? "",
+      lotCode: movement?.lotCode ?? "",
       type: movement?.type ?? "entrada",
       quantity: movement ? String(movement.quantity) : "",
       reason: movement?.reason ?? "",
@@ -569,10 +743,12 @@ export function MovementsScreen() {
     setErrors({});
   }
 
-  function validateForm(values: MovementFormState) {
+  function validateForm(
+    values: MovementFormState,
+    stockBalances: ReadonlyMap<string, number>,
+  ) {
     const nextErrors: FormErrors = {};
     const quantity = Number(values.quantity);
-    const baseline = movements.filter((movement) => movement.id !== editingId);
 
     if (!values.product.trim()) {
       nextErrors.product = "Informe o produto movimentado.";
@@ -616,21 +792,6 @@ export function MovementsScreen() {
       return nextErrors;
     }
 
-    if (values.type === "entrada" && values.status !== "cancelada") {
-      const location = locations.find((item) => item.id === values.locationId);
-
-      if (!location) {
-        nextErrors.locationId = "Localização inválida.";
-        return nextErrors;
-      }
-
-      const available = Math.max(0, getLocationAvailableCapacity(location, baseline));
-
-      if (quantity > available) {
-        nextErrors.quantity = `A localização possui apenas ${formatUnits(available)} disponíveis.`;
-      }
-    }
-
     if (values.type === "saida" && values.status !== "cancelada") {
       const location = locations.find((item) => item.id === values.locationId);
 
@@ -639,37 +800,131 @@ export function MovementsScreen() {
         return nextErrors;
       }
 
-      const used = Math.max(0, getLocationUsedCapacity(location.id, baseline));
+      const availableStock = getLocationStockBalance(stockBalances, location.id);
 
-      if (quantity > used) {
-        nextErrors.quantity = `A localização possui apenas ${formatUnits(used)} ocupadas para saída.`;
+      if (quantity > availableStock) {
+        nextErrors.quantity = `A localização possui apenas ${formatUnits(availableStock)} em saldo para saída.`;
       }
     }
 
     if (values.type === "transferencia" && values.transferStatus !== "cancelada") {
       const fromLocation = locations.find((item) => item.id === values.fromLocationId);
-      const toLocation = locations.find((item) => item.id === values.toLocationId);
 
-      if (!fromLocation || !toLocation) {
+      if (!fromLocation) {
         nextErrors.fromLocationId = "Selecione localizações válidas.";
         return nextErrors;
       }
 
-      const used = Math.max(0, getLocationUsedCapacity(fromLocation.id, baseline));
-      const available = Math.max(0, getLocationAvailableCapacity(toLocation, baseline));
+      if (
+        values.transferStatus === "solicitada" ||
+        values.transferStatus === "em_separacao"
+      ) {
+        return nextErrors;
+      }
 
-      if (quantity > used) {
-        nextErrors.quantity = `A origem possui apenas ${formatUnits(used)} ocupadas para transferência.`;
-      } else if (quantity > available) {
-        nextErrors.quantity = `O destino possui apenas ${formatUnits(available)} disponíveis.`;
+      const availableStock = getLocationStockBalance(stockBalances, fromLocation.id);
+
+      if (quantity > availableStock) {
+        nextErrors.quantity = `A origem possui apenas ${formatUnits(availableStock)} em saldo para transferência.`;
       }
     }
 
     return nextErrors;
   }
 
-  function handleSubmit() {
-    const nextErrors = validateForm(form);
+  function getErrorMessage(error: unknown, fallback: string) {
+    return error instanceof Error ? error.message : fallback;
+  }
+
+  async function reloadMovementsAfterConflict(message: string) {
+    let nextMovements = loadMovements();
+
+    try {
+      nextMovements = await refreshMovements();
+    } catch {
+      nextMovements = loadMovements();
+    }
+
+    setMovements(nextMovements);
+
+    try {
+      const balances = buildLocationStockBalanceMap(
+        await refreshLocationStockBalances(),
+      );
+      setLocationStockBalances(balances);
+      setIsUsingStockFallback(false);
+      fallbackWarningShownRef.current = false;
+    } catch {
+      setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+      setIsUsingStockFallback(true);
+    }
+
+    setToast({
+      id: Date.now(),
+      message,
+      tone: "error",
+    });
+  }
+
+  async function resolveValidationStockBalances() {
+    try {
+      const balances = buildLocationStockBalanceMap(
+        await fetchLocationStockBalances(),
+      );
+      setLocationStockBalances(balances);
+      setIsUsingStockFallback(false);
+      fallbackWarningShownRef.current = false;
+      return revertMovementFromLocationStockBalances(balances, currentMovement);
+    } catch {
+      const fallbackBalances = buildLocalLocationStockBalanceMap(
+        movements.filter((movement) => movement.id !== editingId),
+      );
+      setLocationStockBalances(buildLocalLocationStockBalanceMap(movements));
+      setIsUsingStockFallback(true);
+
+      if (!fallbackWarningShownRef.current) {
+        fallbackWarningShownRef.current = true;
+        setToast({
+          id: Date.now(),
+          message:
+            "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
+          tone: "error",
+        });
+      }
+
+      return fallbackBalances;
+    }
+  }
+
+  async function restoreMovement(removed: VersionedMovementItem) {
+    try {
+      await createMovement(removed);
+      const nextMovements = loadMovements();
+      setMovements(nextMovements);
+
+      try {
+        const balances = buildLocationStockBalanceMap(
+          await refreshLocationStockBalances(),
+        );
+        setLocationStockBalances(balances);
+        setIsUsingStockFallback(false);
+        fallbackWarningShownRef.current = false;
+      } catch {
+        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+        setIsUsingStockFallback(true);
+      }
+    } catch (error) {
+      setToast({
+        id: Date.now(),
+        message: getErrorMessage(error, "NÃ£o foi possÃ­vel restaurar a movimentaÃ§Ã£o."),
+        tone: "error",
+      });
+    }
+  }
+
+  async function handleSubmit() {
+    const stockBalances = await resolveValidationStockBalances();
+    const nextErrors = validateForm(form, stockBalances);
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
@@ -678,15 +933,53 @@ export function MovementsScreen() {
 
     const now = new Date().toISOString();
     const quantity = Number(form.quantity);
+    const matchedProduct =
+      (form.productId
+        ? productCatalog.find(
+            (product) =>
+              normalizeReferenceText(product.sku) === normalizeReferenceText(form.productId),
+          ) ?? null
+        : null) ?? resolveProductSelection(productCatalog, form.product);
+    const matchedLot = resolveLotSelection(lotCatalog, form.lotCode);
+    const shouldPreserveCurrentProductId =
+      !matchedProduct &&
+      !!currentMovement?.productId &&
+      normalizeReferenceText(form.product) === normalizeReferenceText(currentMovement.product);
+    const shouldPreserveCurrentLotCode =
+      !matchedLot &&
+      !!currentMovement?.lotCode &&
+      normalizeReferenceText(form.lotCode) === normalizeReferenceText(currentMovement.lotCode);
+    const finalProductId = matchedProduct?.sku ?? (shouldPreserveCurrentProductId ? currentMovement?.productId : undefined);
+    const finalLotCode = matchedLot?.code ?? (shouldPreserveCurrentLotCode ? currentMovement?.lotCode : undefined);
+    const identityErrors: FormErrors = {};
 
-    const movement: MovementItem = {
+    if (matchedProduct && !finalProductId) {
+      identityErrors.product = PRODUCT_ID_REQUIRED_MESSAGE;
+    }
+
+    if (matchedLot && !finalLotCode) {
+      identityErrors.lotCode = LOT_CODE_REQUIRED_MESSAGE;
+    }
+
+    if (matchedLot && matchedProduct && !isLotCompatibleWithProduct(matchedLot, matchedProduct, productCatalog)) {
+      identityErrors.lotCode = LOT_PRODUCT_MISMATCH_MESSAGE;
+    }
+
+    if (Object.keys(identityErrors).length > 0) {
+      setErrors((current) => ({ ...current, ...identityErrors }));
+      return;
+    }
+
+    const movement: VersionedMovementItem = {
       id: editingId ?? `mov-${Date.now()}`,
-      product: form.product.trim(),
+      product: matchedProduct?.product ?? form.product.trim(),
+      productId: finalProductId,
+      lotCode: finalLotCode,
       type: form.type,
       quantity,
       reason: form.reason.trim(),
       user: form.user.trim(),
-      createdAt: editingId ? movements.find((item) => item.id === editingId)?.createdAt ?? now : now,
+      createdAt: currentMovement?.createdAt ?? now,
       updatedAt: editingId ? now : undefined,
       notes: form.notes.trim() || undefined,
       status: form.type === "transferencia" ? undefined : form.status,
@@ -694,12 +987,13 @@ export function MovementsScreen() {
       priority: form.type === "transferencia" ? form.priority : undefined,
       code:
         form.type === "transferencia"
-          ? movements.find((item) => item.id === editingId)?.code ?? buildTransferCode(new Date())
+          ? currentMovement?.code ?? buildTransferCode(new Date())
           : undefined,
       receivedAt:
         form.type === "transferencia" && form.transferStatus === "recebida"
-          ? movements.find((item) => item.id === editingId)?.receivedAt ?? now
+          ? currentMovement?.receivedAt ?? now
           : undefined,
+      version: currentMovement?.version,
       ...(form.type === "transferencia"
         ? {
             fromLocationId: form.fromLocationId,
@@ -710,40 +1004,124 @@ export function MovementsScreen() {
           }),
     };
 
-    setMovements((current) =>
-      editingId ? current.map((item) => (item.id === editingId ? movement : item)) : [movement, ...current],
-    );
-    setToast({
-      id: Date.now(),
-      message: editingId ? "Movimentação atualizada com sucesso." : "Movimentação registrada com sucesso.",
-      tone: "success",
-    });
-    closeModal();
+    try {
+      if (editingId) {
+        if (typeof currentMovement?.version !== "number") {
+          await reloadMovementsAfterConflict(
+            MOVEMENT_STALE_VERSION_MESSAGE,
+          );
+          return;
+        }
+
+        await updateMovement(editingId, movement, currentMovement.version);
+      } else {
+        await createMovement(movement);
+      }
+
+      const nextMovements = loadMovements();
+      setMovements(nextMovements);
+
+      try {
+        const balances = buildLocationStockBalanceMap(
+          await refreshLocationStockBalances(),
+        );
+        setLocationStockBalances(balances);
+        setIsUsingStockFallback(false);
+        fallbackWarningShownRef.current = false;
+      } catch {
+        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+        setIsUsingStockFallback(true);
+      }
+
+      setToast({
+        id: Date.now(),
+        message: editingId ? "Movimentação atualizada com sucesso." : "Movimentação registrada com sucesso.",
+        tone: "success",
+      });
+      closeModal();
+    } catch (error) {
+      if (error instanceof MovementVersionConflictError) {
+        await reloadMovementsAfterConflict(
+          MOVEMENT_VERSION_CONFLICT_MESSAGE,
+        );
+        closeModal();
+        return;
+      }
+
+      setToast({
+        id: Date.now(),
+        message: getErrorMessage(error, "Não foi possível salvar a movimentação."),
+        tone: "error",
+      });
+    }
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteTarget) {
       return;
     }
 
-    const removed = deleteTarget;
+    if (!canDeleteMovements) {
+      setDeleteTarget(null);
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode excluir movimentacoes.",
+        tone: "error",
+      });
+      return;
+    }
 
-    setMovements((current) => current.filter((movement) => movement.id !== removed.id));
-    setToast({
-      id: Date.now(),
-      message: "Movimentação excluída com sucesso.",
-      tone: "success",
-      actionLabel: "Desfazer",
-      onAction: () => {
-        setMovements((current) => [removed, ...current]);
+    const removed = deleteTarget;
+    setDeleteTarget(null);
+
+    try {
+      if (typeof removed.version !== "number") {
+        await reloadMovementsAfterConflict(
+          MOVEMENT_STALE_VERSION_MESSAGE,
+        );
+        return;
+      }
+
+        await deleteMovement(removed.id, removed.version);
+        const nextMovements = loadMovements();
+        setMovements(nextMovements);
+
+        try {
+          const balances = buildLocationStockBalanceMap(
+            await refreshLocationStockBalances(),
+          );
+          setLocationStockBalances(balances);
+          setIsUsingStockFallback(false);
+          fallbackWarningShownRef.current = false;
+        } catch {
+          setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
+          setIsUsingStockFallback(true);
+        }
+
         setToast({
           id: Date.now(),
-          message: "Movimentação restaurada.",
-          tone: "success",
-        });
-      },
-    });
-    setDeleteTarget(null);
+          message: "Movimentação excluída com sucesso.",
+        tone: "success",
+        actionLabel: "Desfazer",
+        onAction: () => {
+          void restoreMovement(removed);
+        },
+      });
+    } catch (error) {
+      if (error instanceof MovementVersionConflictError) {
+        await reloadMovementsAfterConflict(
+          MOVEMENT_VERSION_CONFLICT_MESSAGE,
+        );
+        return;
+      }
+
+      setToast({
+        id: Date.now(),
+        message: getErrorMessage(error, "Não foi possível excluir a movimentação."),
+        tone: "error",
+      });
+      setDeleteTarget(removed);
+    }
   }
 
   function handleExport() {
@@ -922,7 +1300,7 @@ export function MovementsScreen() {
               )
             }
             onEdit={() => openModal(movement)}
-            onDelete={() => setDeleteTarget(movement)}
+            onDelete={canDeleteMovements ? () => setDeleteTarget(movement) : undefined}
           />
         ))}
       </div>
@@ -985,10 +1363,31 @@ export function MovementsScreen() {
                 <input
                   ref={firstFieldRef}
                   value={form.product}
-                  onChange={(event) => setForm((current) => ({ ...current, product: event.target.value }))}
+                  onChange={(event) => handleProductChange(event.target.value)}
+                  list="movement-product-options"
                   placeholder="Ex.: GoldeN Formula Gatos Castrados"
                   className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                 />
+                <datalist id="movement-product-options">
+                  {productCatalog.map((product) => (
+                    <option key={product.sku} value={buildProductOptionValue(product)} />
+                  ))}
+                </datalist>
+              </Field>
+
+              <Field label="Lote (opcional)" error={errors.lotCode}>
+                <input
+                  value={form.lotCode}
+                  onChange={(event) => handleLotChange(event.target.value)}
+                  list="movement-lot-options"
+                  placeholder="Ex.: PFM260327"
+                  className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
+                />
+                <datalist id="movement-lot-options">
+                  {lotCatalog.map((lot) => (
+                    <option key={lot.code} value={buildLotOptionValue(lot)} />
+                  ))}
+                </datalist>
               </Field>
 
               <Field label="Tipo">
@@ -1095,7 +1494,7 @@ export function MovementsScreen() {
                       className="h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--accent)]"
                     >
                       <option value="concluida">Concluída</option>
-                      <option value="cancelada">Cancelada</option>
+                      {canUpdateMovements ? <option value="cancelada">Cancelada</option> : null}
                     </select>
                   </Field>
                 </>
@@ -1115,7 +1514,7 @@ export function MovementsScreen() {
                       <option value="em_separacao">Em separação</option>
                       <option value="em_transito">Em trânsito</option>
                       <option value="recebida">Recebida</option>
-                      <option value="cancelada">Cancelada</option>
+                      {canUpdateMovements ? <option value="cancelada">Cancelada</option> : null}
                     </select>
                   </Field>
 
@@ -1222,3 +1621,4 @@ export function MovementsScreen() {
     </section>
   );
 }
+
