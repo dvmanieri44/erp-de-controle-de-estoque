@@ -3,6 +3,8 @@
 :root {
   --background: #ffffff;
   --foreground: #0e1b33;
+  --font-geist-sans: "Segoe UI", Arial, Helvetica, sans-serif;
+  --font-geist-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --navy-900: #081a3a;
   --navy-800: #0f295a;
   --navy-700: #1b3e79;

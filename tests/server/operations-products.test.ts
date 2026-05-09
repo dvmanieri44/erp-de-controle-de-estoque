@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { PRODUCT_LINES } from "@/lib/operations-data";
+import { PRODUCT_SPECIES_OPTIONS, PRODUCT_STATUS_OPTIONS } from "@/lib/operations-data";
 import { ErpResourceValidationError } from "@/lib/server/erp-resource-schema";
 import {
   createProduct,
@@ -26,26 +26,26 @@ const SAMPLE_PRODUCT = {
   sku: "PF-AD-MINI-25",
   product: "PremieR Formula Caes Adultos Porte Mini",
   line: "PremieR Formula",
-  species: PRODUCT_LINES[0]!.species,
+  species: PRODUCT_SPECIES_OPTIONS[0],
   stage: "Adulto",
   package: "2,5 kg",
   stock: 18400,
   target: 24000,
   coverageDays: 12,
-  status: PRODUCT_LINES[0]!.status,
+  status: PRODUCT_STATUS_OPTIONS[0],
 };
 
 const SAMPLE_NEW_PRODUCT = {
   sku: "TEST-PROD-001",
   product: "Produto Teste Itemizado",
   line: "PremieR Formula",
-  species: PRODUCT_LINES[2]!.species,
+  species: PRODUCT_SPECIES_OPTIONS[0],
   stage: "Filhote",
   package: "15 kg",
   stock: 7200,
   target: 14000,
   coverageDays: 6,
-  status: PRODUCT_LINES[2]!.status,
+  status: PRODUCT_STATUS_OPTIONS[2],
 };
 
 function restoreProcessEnv() {

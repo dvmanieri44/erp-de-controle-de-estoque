@@ -8,22 +8,25 @@ import {
   buildLocalLocationStockBalanceMap,
   buildLotOptionValue,
   buildProductOptionValue,
+  fetchLocationStockBalancesWithFallback,
   getLocationStockBalance,
-  isLotCompatibleWithProduct,
+  getInventoryErrorMessage,
+  loadMovementsWithStockRefresh,
   resolveLotProduct,
   resolveLotSelection,
+  resolveProductLotIdentity,
   resolveProductSelection,
+  resolveValidationLocationStockBalances,
+  reloadMovementsWithStockAfterConflict,
   revertMovementFromLocationStockBalances,
+  type LocationStockBalanceResolution,
 } from "@/components/dashboard/inventory/movement-form-helpers";
 import {
   DATE_RANGE_OPTIONS,
-  INITIAL_LOCATIONS,
   MOVEMENT_TYPES,
-  buildLocationStockBalanceMap,
   buildTransferCode,
   createMovement,
   deleteMovement,
-  fetchLocationStockBalances,
   formatDateTime,
   formatSignedUnits,
   formatUnits,
@@ -34,9 +37,7 @@ import {
   loadMovements,
   matchesDateRange,
   MovementVersionConflictError,
-  normalizeReferenceText,
   normalizeText,
-  refreshLocationStockBalances,
   refreshMovements,
   type DateRangeFilter,
   type LocationItem,
@@ -308,7 +309,7 @@ function MovementListItem({
   locations: LocationItem[];
   expanded: boolean;
   onToggle: () => void;
-  onEdit: () => void;
+  onEdit?: () => void;
   onDelete?: () => void;
 }) {
   const quantity = getMovementDisplayQuantity(movement);
@@ -352,12 +353,14 @@ function MovementListItem({
                 <path d={expanded ? "M6 15l6-6 6 6" : "m6 9 6 6 6-6"} />
               </svg>
             </ActionButton>
-            <ActionButton label={`Editar ${movement.product}`} onClick={onEdit}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                <path d="M4 20h4l10-10-4-4L4 16v4Z" />
-                <path d="m12.5 7.5 4 4" />
-              </svg>
-            </ActionButton>
+            {onEdit ? (
+              <ActionButton label={`Editar ${movement.product}`} onClick={onEdit}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                  <path d="M4 20h4l10-10-4-4L4 16v4Z" />
+                  <path d="m12.5 7.5 4 4" />
+                </svg>
+              </ActionButton>
+            ) : null}
             {onDelete ? (
               <ActionButton label={`Excluir ${movement.product}`} onClick={onDelete} tone="danger">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
@@ -394,10 +397,11 @@ function MovementListItem({
 }
 
 export function MovementsScreen() {
-  const { canDelete, canUpdate } = useErpPermissions();
+  const { canCreate, canDelete, canUpdate } = useErpPermissions();
+  const canCreateMovements = canCreate("inventory.movements");
   const canDeleteMovements = canDelete("inventory.movements");
   const canUpdateMovements = canUpdate("inventory.movements");
-  const [locations, setLocations] = useState<LocationItem[]>(INITIAL_LOCATIONS);
+  const [locations, setLocations] = useState<LocationItem[]>([]);
   const [movements, setMovements] = useState<VersionedMovementItem[]>([]);
   const [locationStockBalances, setLocationStockBalances] = useState<LocationStockBalanceMap>(() => new Map());
   const [isUsingStockFallback, setIsUsingStockFallback] = useState(false);
@@ -420,38 +424,34 @@ export function MovementsScreen() {
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
   const fallbackWarningShownRef = useRef(false);
 
+  function applyStockResolution(stockResolution: LocationStockBalanceResolution) {
+    setLocationStockBalances(stockResolution.balances);
+    setIsUsingStockFallback(stockResolution.isUsingFallback);
+
+    if (!stockResolution.isUsingFallback) {
+      fallbackWarningShownRef.current = false;
+    }
+  }
+
   useEffect(() => {
     let isActive = true;
 
     async function syncLocationStock(nextMovements: VersionedMovementItem[]) {
-      try {
-        const balances = buildLocationStockBalanceMap(
-          await fetchLocationStockBalances(),
-        );
+      const stockResolution = await fetchLocationStockBalancesWithFallback(nextMovements);
 
-        if (!isActive) {
-          return;
-        }
+      if (!isActive) {
+        return;
+      }
 
-        setLocationStockBalances(balances);
-        setIsUsingStockFallback(false);
-        fallbackWarningShownRef.current = false;
-      } catch {
-        if (!isActive) {
-          return;
-        }
+      applyStockResolution(stockResolution);
 
-        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-        setIsUsingStockFallback(true);
-
-        if (!fallbackWarningShownRef.current) {
-          fallbackWarningShownRef.current = true;
-          setToast({
-            id: Date.now(),
-            message: "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
-            tone: "error",
-          });
-        }
+      if (stockResolution.isUsingFallback && !fallbackWarningShownRef.current) {
+        fallbackWarningShownRef.current = true;
+        setToast({
+          id: Date.now(),
+          message: "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
+          tone: "error",
+        });
       }
     }
 
@@ -722,6 +722,33 @@ export function MovementsScreen() {
   }
 
   function openModal(movement?: MovementItem) {
+    if (movement && !canUpdateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode editar movimentacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (!movement && !canCreateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode criar movimentacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (!movement && locations.length === 0) {
+      setToast({
+        id: Date.now(),
+        message: "Cadastre pelo menos uma localizacao antes de movimentar estoque.",
+        tone: "error",
+      });
+      return;
+    }
+
     setIsModalOpen(true);
     setEditingId(movement?.id ?? null);
     setForm({
@@ -832,32 +859,10 @@ export function MovementsScreen() {
     return nextErrors;
   }
 
-  function getErrorMessage(error: unknown, fallback: string) {
-    return error instanceof Error ? error.message : fallback;
-  }
-
   async function reloadMovementsAfterConflict(message: string) {
-    let nextMovements = loadMovements();
-
-    try {
-      nextMovements = await refreshMovements();
-    } catch {
-      nextMovements = loadMovements();
-    }
-
-    setMovements(nextMovements);
-
-    try {
-      const balances = buildLocationStockBalanceMap(
-        await refreshLocationStockBalances(),
-      );
-      setLocationStockBalances(balances);
-      setIsUsingStockFallback(false);
-      fallbackWarningShownRef.current = false;
-    } catch {
-      setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-      setIsUsingStockFallback(true);
-    }
+    const result = await reloadMovementsWithStockAfterConflict();
+    setMovements(result.movements);
+    applyStockResolution(result.stock);
 
     setToast({
       id: Date.now(),
@@ -867,62 +872,64 @@ export function MovementsScreen() {
   }
 
   async function resolveValidationStockBalances() {
-    try {
-      const balances = buildLocationStockBalanceMap(
-        await fetchLocationStockBalances(),
-      );
-      setLocationStockBalances(balances);
-      setIsUsingStockFallback(false);
-      fallbackWarningShownRef.current = false;
-      return revertMovementFromLocationStockBalances(balances, currentMovement);
-    } catch {
-      const fallbackBalances = buildLocalLocationStockBalanceMap(
-        movements.filter((movement) => movement.id !== editingId),
-      );
-      setLocationStockBalances(buildLocalLocationStockBalanceMap(movements));
-      setIsUsingStockFallback(true);
+    const stockResolution = await resolveValidationLocationStockBalances({
+      movements,
+      currentMovement,
+      editingId,
+    });
+    applyStockResolution(stockResolution);
 
-      if (!fallbackWarningShownRef.current) {
-        fallbackWarningShownRef.current = true;
-        setToast({
-          id: Date.now(),
-          message:
-            "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
-          tone: "error",
-        });
-      }
-
-      return fallbackBalances;
+    if (!stockResolution.isUsingFallback) {
+      return stockResolution.validationBalances;
     }
+
+    if (!fallbackWarningShownRef.current) {
+      fallbackWarningShownRef.current = true;
+      setToast({
+        id: Date.now(),
+        message:
+          "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
+        tone: "error",
+      });
+    }
+
+    return stockResolution.validationBalances;
   }
 
   async function restoreMovement(removed: VersionedMovementItem) {
     try {
       await createMovement(removed);
-      const nextMovements = loadMovements();
-      setMovements(nextMovements);
-
-      try {
-        const balances = buildLocationStockBalanceMap(
-          await refreshLocationStockBalances(),
-        );
-        setLocationStockBalances(balances);
-        setIsUsingStockFallback(false);
-        fallbackWarningShownRef.current = false;
-      } catch {
-        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-        setIsUsingStockFallback(true);
-      }
+      const result = await loadMovementsWithStockRefresh();
+      setMovements(result.movements);
+      applyStockResolution(result.stock);
     } catch (error) {
       setToast({
         id: Date.now(),
-        message: getErrorMessage(error, "NÃ£o foi possÃ­vel restaurar a movimentaÃ§Ã£o."),
+        message: getInventoryErrorMessage(error, "Nao foi possivel restaurar a movimentacao."),
         tone: "error",
       });
     }
   }
 
   async function handleSubmit() {
+    if (editingId && !canUpdateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode editar movimentacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (!editingId && !canCreateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode criar movimentacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
     const stockBalances = await resolveValidationStockBalances();
     const nextErrors = validateForm(form, stockBalances);
     setErrors(nextErrors);
@@ -933,37 +940,22 @@ export function MovementsScreen() {
 
     const now = new Date().toISOString();
     const quantity = Number(form.quantity);
-    const matchedProduct =
-      (form.productId
-        ? productCatalog.find(
-            (product) =>
-              normalizeReferenceText(product.sku) === normalizeReferenceText(form.productId),
-          ) ?? null
-        : null) ?? resolveProductSelection(productCatalog, form.product);
-    const matchedLot = resolveLotSelection(lotCatalog, form.lotCode);
-    const shouldPreserveCurrentProductId =
-      !matchedProduct &&
-      !!currentMovement?.productId &&
-      normalizeReferenceText(form.product) === normalizeReferenceText(currentMovement.product);
-    const shouldPreserveCurrentLotCode =
-      !matchedLot &&
-      !!currentMovement?.lotCode &&
-      normalizeReferenceText(form.lotCode) === normalizeReferenceText(currentMovement.lotCode);
-    const finalProductId = matchedProduct?.sku ?? (shouldPreserveCurrentProductId ? currentMovement?.productId : undefined);
-    const finalLotCode = matchedLot?.code ?? (shouldPreserveCurrentLotCode ? currentMovement?.lotCode : undefined);
-    const identityErrors: FormErrors = {};
-
-    if (matchedProduct && !finalProductId) {
-      identityErrors.product = PRODUCT_ID_REQUIRED_MESSAGE;
-    }
-
-    if (matchedLot && !finalLotCode) {
-      identityErrors.lotCode = LOT_CODE_REQUIRED_MESSAGE;
-    }
-
-    if (matchedLot && matchedProduct && !isLotCompatibleWithProduct(matchedLot, matchedProduct, productCatalog)) {
-      identityErrors.lotCode = LOT_PRODUCT_MISMATCH_MESSAGE;
-    }
+    const identity = resolveProductLotIdentity({
+      productCatalog,
+      lotCatalog,
+      product: form.product,
+      productId: form.productId,
+      lotCode: form.lotCode,
+      currentProduct: currentMovement?.product,
+      currentProductId: currentMovement?.productId,
+      currentLotCode: currentMovement?.lotCode,
+      messages: {
+        productIdRequired: PRODUCT_ID_REQUIRED_MESSAGE,
+        lotCodeRequired: LOT_CODE_REQUIRED_MESSAGE,
+        lotProductMismatch: LOT_PRODUCT_MISMATCH_MESSAGE,
+      },
+    });
+    const identityErrors: FormErrors = identity.errors;
 
     if (Object.keys(identityErrors).length > 0) {
       setErrors((current) => ({ ...current, ...identityErrors }));
@@ -972,9 +964,9 @@ export function MovementsScreen() {
 
     const movement: VersionedMovementItem = {
       id: editingId ?? `mov-${Date.now()}`,
-      product: matchedProduct?.product ?? form.product.trim(),
-      productId: finalProductId,
-      lotCode: finalLotCode,
+      product: identity.matchedProduct?.product ?? form.product.trim(),
+      productId: identity.productId,
+      lotCode: identity.lotCode,
       type: form.type,
       quantity,
       reason: form.reason.trim(),
@@ -1018,20 +1010,9 @@ export function MovementsScreen() {
         await createMovement(movement);
       }
 
-      const nextMovements = loadMovements();
-      setMovements(nextMovements);
-
-      try {
-        const balances = buildLocationStockBalanceMap(
-          await refreshLocationStockBalances(),
-        );
-        setLocationStockBalances(balances);
-        setIsUsingStockFallback(false);
-        fallbackWarningShownRef.current = false;
-      } catch {
-        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-        setIsUsingStockFallback(true);
-      }
+      const result = await loadMovementsWithStockRefresh();
+      setMovements(result.movements);
+      applyStockResolution(result.stock);
 
       setToast({
         id: Date.now(),
@@ -1050,7 +1031,7 @@ export function MovementsScreen() {
 
       setToast({
         id: Date.now(),
-        message: getErrorMessage(error, "Não foi possível salvar a movimentação."),
+        message: getInventoryErrorMessage(error, "Não foi possível salvar a movimentação."),
         tone: "error",
       });
     }
@@ -1082,25 +1063,14 @@ export function MovementsScreen() {
         return;
       }
 
-        await deleteMovement(removed.id, removed.version);
-        const nextMovements = loadMovements();
-        setMovements(nextMovements);
+      await deleteMovement(removed.id, removed.version);
+      const result = await loadMovementsWithStockRefresh();
+      setMovements(result.movements);
+      applyStockResolution(result.stock);
 
-        try {
-          const balances = buildLocationStockBalanceMap(
-            await refreshLocationStockBalances(),
-          );
-          setLocationStockBalances(balances);
-          setIsUsingStockFallback(false);
-          fallbackWarningShownRef.current = false;
-        } catch {
-          setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-          setIsUsingStockFallback(true);
-        }
-
-        setToast({
-          id: Date.now(),
-          message: "Movimentação excluída com sucesso.",
+      setToast({
+        id: Date.now(),
+        message: "Movimentação excluída com sucesso.",
         tone: "success",
         actionLabel: "Desfazer",
         onAction: () => {
@@ -1117,7 +1087,7 @@ export function MovementsScreen() {
 
       setToast({
         id: Date.now(),
-        message: getErrorMessage(error, "Não foi possível excluir a movimentação."),
+        message: getInventoryErrorMessage(error, "Não foi possível excluir a movimentação."),
         tone: "error",
       });
       setDeleteTarget(removed);
@@ -1141,7 +1111,8 @@ export function MovementsScreen() {
     ]);
   }
 
-  const canCreateMovement = locations.length > 0;
+  const hasLocationsForMovement = locations.length > 0;
+  const canCreateMovement = canCreateMovements && hasLocationsForMovement;
 
   return (
     <section className="relative space-y-6 pb-8">
@@ -1283,7 +1254,11 @@ export function MovementsScreen() {
 
       {!canCreateMovement ? (
         <div className="rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel)] px-5 py-10 text-center">
-          <p className="text-sm font-medium text-[var(--foreground)]">Cadastre pelo menos uma localização antes de movimentar estoque.</p>
+          <p className="text-sm font-medium text-[var(--foreground)]">
+            {hasLocationsForMovement
+              ? "Seu perfil nao pode criar movimentacoes."
+              : "Cadastre pelo menos uma localização antes de movimentar estoque."}
+          </p>
         </div>
       ) : null}
 
@@ -1299,7 +1274,7 @@ export function MovementsScreen() {
                 current.includes(movement.id) ? current.filter((id) => id !== movement.id) : [...current, movement.id],
               )
             }
-            onEdit={() => openModal(movement)}
+            onEdit={canUpdateMovements ? () => openModal(movement) : undefined}
             onDelete={canDeleteMovements ? () => setDeleteTarget(movement) : undefined}
           />
         ))}

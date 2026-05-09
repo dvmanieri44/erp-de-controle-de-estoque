@@ -26,7 +26,7 @@ const COPY = {
     base: "Base",
     baseSummary: "{locations} localizações · {movements} eventos",
     environment: "Ambiente",
-    demoMode: "Modo demo operacional",
+    environmentMode: "Operação interna",
     noResults: "Nenhum item encontrado para essa busca.",
   },
   "en-US": {
@@ -38,7 +38,7 @@ const COPY = {
     base: "Base",
     baseSummary: "{locations} locations · {movements} events",
     environment: "Environment",
-    demoMode: "Operational demo mode",
+    environmentMode: "Internal operation",
     noResults: "No items found for this search.",
   },
   "es-ES": {
@@ -50,7 +50,7 @@ const COPY = {
     base: "Base",
     baseSummary: "{locations} ubicaciones · {movements} eventos",
     environment: "Entorno",
-    demoMode: "Modo demo operativo",
+    environmentMode: "Operación interna",
     noResults: "No se encontró ningún elemento para esta búsqueda.",
   },
 } as const;
@@ -189,7 +189,7 @@ export function WorkbenchBar() {
           </div>
           <div className="rounded-2xl bg-[var(--panel-soft)] px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">{copy.environment}</p>
-            <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">{copy.demoMode}</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">{copy.environmentMode}</p>
           </div>
         </div>
       </div>
