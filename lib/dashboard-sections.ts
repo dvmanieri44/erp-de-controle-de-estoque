@@ -18,6 +18,7 @@ const SECTION_DEFINITIONS: SectionDefinition[] = [
   { id: "dashboard", group: "principal" },
   { id: "notificacoes", group: "principal" },
   { id: "pendencias", group: "principal" },
+  { id: "rastreabilidade", group: "principal" },
   { id: "produtos", group: "estoque" },
   { id: "movimentacoes", group: "estoque" },
   { id: "estoque-baixo", group: "estoque" },
@@ -52,6 +53,10 @@ const SECTION_COPY: Record<LanguagePreference, Record<string, { label: string; d
     pendencias: {
       label: "Pendências",
       description: "Itens aguardando ação por área, prioridade, responsável ou etapa do processo.",
+    },
+    rastreabilidade: {
+      label: "Rastreabilidade",
+      description: "Consulta ponta a ponta de lotes, movimentacoes, transferencias, qualidade e documentos operacionais.",
     },
     produtos: {
       label: "Linhas e SKUs",
@@ -143,6 +148,10 @@ const SECTION_COPY: Record<LanguagePreference, Record<string, { label: string; d
       label: "Pending Items",
       description: "Items waiting for action by area, priority, owner or process stage.",
     },
+    rastreabilidade: {
+      label: "Traceability",
+      description: "End-to-end review of lots, movements, transfers, quality events and operational documents.",
+    },
     produtos: {
       label: "Lines and SKUs",
       description: "Portfolio management by product line, species, size, life stage, package and available stock.",
@@ -232,6 +241,10 @@ const SECTION_COPY: Record<LanguagePreference, Record<string, { label: string; d
     pendencias: {
       label: "Pendientes",
       description: "Elementos que esperan acción por área, prioridad, responsable o etapa del proceso.",
+    },
+    rastreabilidade: {
+      label: "Trazabilidad",
+      description: "Consulta integral de lotes, movimientos, transferencias, calidad y documentos operativos.",
     },
     produtos: {
       label: "Líneas y SKUs",

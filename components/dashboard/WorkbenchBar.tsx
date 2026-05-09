@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { useLocale } from "@/components/providers/LocaleProvider";
+import { ERP_DATA_EVENT } from "@/lib/app-events";
 import { getDashboardSections } from "@/lib/dashboard-sections";
-import { LOTS, NOTIFICATIONS, PRODUCT_LINES } from "@/lib/operations-data";
-import { loadLocations, loadMovements } from "@/lib/inventory";
+import { loadLocations, loadMovements, type LocationItem, type MovementItem } from "@/lib/inventory";
+import { loadLots, loadNotifications, loadProductLines } from "@/lib/operations-store";
 
 type SearchItem = {
   id: string;
@@ -70,16 +71,32 @@ export function WorkbenchBar() {
   const [isOpen, setIsOpen] = useState(false);
   const [locationsCount, setLocationsCount] = useState(0);
   const [movementsCount, setMovementsCount] = useState(0);
+  const [locations, setLocations] = useState<LocationItem[]>([]);
+  const [movements, setMovements] = useState<MovementItem[]>([]);
+  const [products, setProducts] = useState(() => loadProductLines());
+  const [lots, setLots] = useState(() => loadLots());
+  const [notifications, setNotifications] = useState(() => loadNotifications());
 
   useEffect(() => {
     const sync = () => {
-      setLocationsCount(loadLocations().length);
-      setMovementsCount(loadMovements().length);
+      const nextLocations = loadLocations();
+      const nextMovements = loadMovements();
+      setLocations(nextLocations);
+      setMovements(nextMovements);
+      setLocationsCount(nextLocations.length);
+      setMovementsCount(nextMovements.length);
+      setProducts(loadProductLines());
+      setLots(loadLots());
+      setNotifications(loadNotifications());
     };
 
     sync();
     window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
+    window.addEventListener(ERP_DATA_EVENT, sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener(ERP_DATA_EVENT, sync);
+    };
   }, []);
 
   useEffect(() => {
@@ -102,22 +119,36 @@ export function WorkbenchBar() {
       href: section.id === "dashboard" ? "/dashboard" : `/dashboard/${section.id}`,
     }));
 
-    const products = PRODUCT_LINES.map((item) => ({
+    const productItems = products.map((item) => ({
       id: `product-${item.sku}`,
       title: item.product,
       subtitle: `SKU ${item.sku}`,
       href: "/dashboard/produtos",
     }));
 
-    const lots = LOTS.map((item) => ({
+    const lotItems = lots.map((item) => ({
       id: `lot-${item.code}`,
       title: item.code,
       subtitle: item.product,
       href: "/dashboard/lotes",
     }));
 
-    return [...sections, ...products, ...lots];
-  }, [copy.sectionSubtitle, locale]);
+    const movementItems = movements.map((item) => ({
+      id: `movement-${item.id}`,
+      title: item.product,
+      subtitle: item.code ?? item.reason,
+      href: item.type === "transferencia" ? "/dashboard/transferencias" : "/dashboard/movimentacoes",
+    }));
+
+    const locationItems = locations.map((item) => ({
+      id: `location-${item.id}`,
+      title: item.name,
+      subtitle: item.address,
+      href: "/dashboard/localizacoes",
+    }));
+
+    return [...sections, ...productItems, ...lotItems, ...movementItems, ...locationItems];
+  }, [copy.sectionSubtitle, locale, locations, lots, movements, products]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -149,7 +180,7 @@ export function WorkbenchBar() {
           <div className="rounded-2xl bg-[var(--panel-soft)] px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">{copy.alerts}</p>
             <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">
-              {NOTIFICATIONS.filter((item) => !item.status.toLowerCase().includes("concl")).length} {copy.openAlerts}
+              {notifications.filter((item) => !item.status.toLowerCase().includes("concl")).length} {copy.openAlerts}
             </p>
           </div>
           <div className="rounded-2xl bg-[var(--panel-soft)] px-4 py-3">

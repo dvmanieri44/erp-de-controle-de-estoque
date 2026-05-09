@@ -4,11 +4,15 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { useLocale } from "@/components/providers/LocaleProvider";
+import { ERP_DATA_EVENT } from "@/lib/app-events";
 import {
+  buildLocationStockBalanceMap,
+  fetchLocationStockBalances,
   formatDateTime,
   formatUnits,
   getLocationTypeLabel,
-  getLocationUsedCapacity,
+  getPreferredLocationAvailableCapacity,
+  getPreferredLocationUsedCapacity,
   getMovementStatusLabel,
   getMovementTypeLabel,
   getTransferPriorityLabel,
@@ -16,12 +20,13 @@ import {
   loadLocations,
   loadMovements,
   type LocationItem,
+  type LocationStockBalanceMap,
   type MovementItem,
 } from "@/lib/inventory";
 
 const COPY = {
   "pt-BR": {
-    eyebrow: "PremieRpet Operations",
+    eyebrow: "Fluxy",
     title: "Painel Industrial",
     description: "Visão consolidada da produção liberada, ocupação de áreas, transferências internas e fluxo entre fábrica, expedição, quality hold e centros de distribuição.",
     recordMovement: "Registrar movimentação",
@@ -63,7 +68,7 @@ const COPY = {
     byUser: "Por",
   },
   "en-US": {
-    eyebrow: "PremieRpet Operations",
+    eyebrow: "Fluxy",
     title: "Industrial Dashboard",
     description: "Consolidated view of released production, area occupancy, internal transfers and flow between factory, shipping, quality hold and distribution centers.",
     recordMovement: "Record movement",
@@ -105,7 +110,7 @@ const COPY = {
     byUser: "By",
   },
   "es-ES": {
-    eyebrow: "PremieRpet Operations",
+    eyebrow: "Fluxy",
     title: "Panel Industrial",
     description: "Vista consolidada de la producción liberada, ocupación de áreas, transferencias internas y flujo entre fábrica, expedición, quality hold y centros de distribución.",
     recordMovement: "Registrar movimiento",
@@ -191,34 +196,79 @@ function DashboardPanel({ title, eyebrow, children }: DashboardPanelProps) {
   );
 }
 
-function getLocationFillRate(location: LocationItem, movements: MovementItem[]) {
-  const used = Math.max(0, getLocationUsedCapacity(location.id, movements));
+function getLocationFillRate(
+  location: LocationItem,
+  movements: MovementItem[],
+  stockBalances?: ReadonlyMap<string, number> | null,
+) {
+  const used = getPreferredLocationUsedCapacity(location.id, movements, stockBalances);
   const percent = location.capacityTotal > 0 ? (used / location.capacityTotal) * 100 : 0;
 
   return {
     used,
     percent,
-    available: Math.max(0, location.capacityTotal - used),
+    available: getPreferredLocationAvailableCapacity(location, movements, stockBalances),
   };
 }
 
 export function IndustrialDashboardScreen() {
   const { locale } = useLocale();
   const copy = COPY[locale];
+  const stockBalanceFallbackMessage = useMemo(
+    () =>
+      ({
+        "pt-BR": "O saldo consolidado por localização não pôde ser carregado. O painel está usando fallback local temporariamente.",
+        "en-US": "The consolidated stock by location could not be loaded. The dashboard is using a temporary local fallback.",
+        "es-ES": "No se pudo cargar el saldo consolidado por ubicación. El panel usa un fallback local temporal.",
+      })[locale],
+    [locale],
+  );
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [movements, setMovements] = useState<MovementItem[]>([]);
+  const [locationStockBalances, setLocationStockBalances] = useState<LocationStockBalanceMap>(() => new Map());
+  const [stockBalanceError, setStockBalanceError] = useState<string | null>(null);
 
   useEffect(() => {
-    const syncData = () => {
-      setLocations(loadLocations());
-      setMovements(loadMovements());
+    let isActive = true;
+
+    const syncData = async () => {
+      try {
+        setLocations(loadLocations());
+        setMovements(loadMovements());
+      } catch {
+        return;
+      }
+
+      try {
+        const balances = await fetchLocationStockBalances();
+
+        if (!isActive) {
+          return;
+        }
+
+        setLocationStockBalances(buildLocationStockBalanceMap(balances));
+        setStockBalanceError(null);
+      } catch {
+        if (isActive) {
+          setLocationStockBalances(new Map());
+          setStockBalanceError(stockBalanceFallbackMessage);
+        }
+      }
     };
 
-    syncData();
-    window.addEventListener("storage", syncData);
+    void syncData();
+    const handleSync = () => {
+      void syncData();
+    };
+    window.addEventListener("storage", handleSync);
+    window.addEventListener(ERP_DATA_EVENT, handleSync);
 
-    return () => window.removeEventListener("storage", syncData);
-  }, []);
+    return () => {
+      isActive = false;
+      window.removeEventListener("storage", handleSync);
+      window.removeEventListener(ERP_DATA_EVENT, handleSync);
+    };
+  }, [stockBalanceFallbackMessage]);
 
   const activeMovements = useMemo(() => movements.filter((movement) => !isMovementCancelled(movement)), [movements]);
 
@@ -226,7 +276,8 @@ export function IndustrialDashboardScreen() {
     const todayKey = new Date().toDateString();
     const totalCapacity = locations.reduce((sum, location) => sum + location.capacityTotal, 0);
     const totalUsed = locations.reduce(
-      (sum, location) => sum + Math.max(0, getLocationUsedCapacity(location.id, activeMovements)),
+      (sum, location) =>
+        sum + getPreferredLocationUsedCapacity(location.id, activeMovements, locationStockBalances),
       0,
     );
     const activeTransfers = activeMovements.filter(
@@ -242,8 +293,13 @@ export function IndustrialDashboardScreen() {
       (movement) => movement.type === "entrada" && new Date(movement.createdAt).toDateString() === todayKey,
     );
     const qualityLocation = locations.find((location) => location.name.toLowerCase().includes("quality"));
-    const qualityHoldUnits = qualityLocation ? Math.max(0, getLocationUsedCapacity(qualityLocation.id, activeMovements)) : 0;
-    const criticalLocations = locations.filter((location) => getLocationFillRate(location, activeMovements).percent >= 80);
+    const qualityHoldUnits = qualityLocation
+      ? getPreferredLocationUsedCapacity(qualityLocation.id, activeMovements, locationStockBalances)
+      : 0;
+    const criticalLocations = locations.filter(
+      (location) =>
+        getLocationFillRate(location, activeMovements, locationStockBalances).percent >= 80,
+    );
 
     return {
       totalCapacity,
@@ -256,17 +312,17 @@ export function IndustrialDashboardScreen() {
       qualityHoldUnits,
       criticalLocations,
     };
-  }, [activeMovements, locations]);
+  }, [activeMovements, locationStockBalances, locations]);
 
   const locationsByLoad = useMemo(
     () =>
       [...locations]
         .map((location) => ({
           location,
-          ...getLocationFillRate(location, activeMovements),
+          ...getLocationFillRate(location, activeMovements, locationStockBalances),
         }))
         .sort((left, right) => right.percent - left.percent),
-    [activeMovements, locations],
+    [activeMovements, locationStockBalances, locations],
   );
 
   const recentMovements = useMemo(
@@ -322,6 +378,12 @@ export function IndustrialDashboardScreen() {
         <DashboardMetricCard title={copy.openTransfers} value={String(summary.activeTransfers)} helper={copy.openTransfersHelper.replace("{count}", String(summary.transfersToday))} tone="warning" />
         <DashboardMetricCard title={copy.qualityHold} value={formatUnits(summary.qualityHoldUnits, locale)} helper={copy.qualityHoldHelper.replace("{count}", String(summary.entriesToday))} />
       </div>
+
+      {stockBalanceError ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {stockBalanceError}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 2xl:grid-cols-[1.15fr_0.85fr]">
         <DashboardPanel title={copy.occupancyMap} eyebrow={copy.capacity}>
@@ -393,7 +455,7 @@ export function IndustrialDashboardScreen() {
             <div className="space-y-3">
               {summary.criticalLocations.length > 0 ? (
                 summary.criticalLocations.map((location) => {
-                  const fill = getLocationFillRate(location, activeMovements);
+                  const fill = getLocationFillRate(location, activeMovements, locationStockBalances);
 
                   return (
                     <div key={location.id} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">

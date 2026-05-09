@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PremieRpet Operations",
-  description: "ERP industrial de estoque, logística interna e rastreabilidade da PremieRpet",
+  title: "Fluxy",
+  description: "Fluxy ERP para estoque, operacoes internas e rastreabilidade",
 };
 
 export default function RootLayout({
