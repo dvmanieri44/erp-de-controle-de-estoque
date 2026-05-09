@@ -353,12 +353,10 @@ export function LoginScreen({ nextPath, resetToken }: LoginScreenProps) {
         process.env.NODE_ENV !== "production" &&
         process.env.NEXT_PUBLIC_ENABLE_DEV_CREDENTIAL_HINTS === "true" ? (
           <div className="mt-5 rounded-lg bg-slate-100 p-3 text-left text-xs text-slate-700">
-            <strong>Acessos locais de desenvolvimento:</strong>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>admin / admin123</li>
-              <li>joao / 123456</li>
-              <li>maria / 123456</li>
-            </ul>
+            <strong>Ambiente local de desenvolvimento:</strong>
+            <p className="mt-2">
+              Execute <code>npm run seed:dev-users</code> para provisionar as contas temporarias da equipe no ambiente local.
+            </p>
           </div>
         ) : null}
 

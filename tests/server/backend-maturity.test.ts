@@ -9,8 +9,10 @@ import {
   POST as postErpStateResourceRoute,
   PUT as putErpStateResourceRoute,
 } from "@/app/api/erp/state/[resource]/route";
-import { INITIAL_LOCATIONS } from "@/lib/inventory";
-import { PRODUCT_LINES } from "@/lib/operations-data";
+import {
+  PRODUCT_SPECIES_OPTIONS,
+  PRODUCT_STATUS_OPTIONS,
+} from "@/lib/operations-data";
 import {
   assertCanDeleteErpResource,
   assertCanUpdateErpResource,
@@ -159,11 +161,11 @@ describe("backend maturity", () => {
         {
               id: "cd-sudeste",
               name: "CD Sudeste",
-              type: INITIAL_LOCATIONS[1]!.type,
+              type: "Centro de Distribuição",
               address: "Jundiai - SP",
               manager: "Carlos Menezes",
               capacityTotal: 1000,
-              status: INITIAL_LOCATIONS[0]!.status,
+              status: "Ativa",
             },
           ],
           { baseVersion: 0 },
@@ -177,11 +179,11 @@ describe("backend maturity", () => {
             {
               id: "cd-sudeste",
               name: "CD Sudeste Atualizado",
-              type: INITIAL_LOCATIONS[1]!.type,
+              type: "Centro de Distribuição",
               address: "Jundiai - SP",
               manager: "Carlos Menezes",
               capacityTotal: 1200,
-              status: INITIAL_LOCATIONS[0]!.status,
+              status: "Ativa",
             },
           ],
           { baseVersion: 0 },
@@ -598,13 +600,13 @@ describe("backend maturity", () => {
           sku: "PF-AD-MINI-25",
           product: "PremieR Formula Caes Adultos Porte Mini",
           line: "PremieR Formula",
-          species: PRODUCT_LINES[1]!.species,
+          species: PRODUCT_SPECIES_OPTIONS[0]!,
           stage: "Adulto",
           package: "2,5 kg",
           stock: 100,
           target: 150,
           coverageDays: 10,
-          status: PRODUCT_LINES[0]!.status,
+          status: PRODUCT_STATUS_OPTIONS[0]!,
         },
       ],
       { baseVersion: 0 },
