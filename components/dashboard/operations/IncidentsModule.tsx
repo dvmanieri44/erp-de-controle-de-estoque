@@ -17,7 +17,8 @@ import { useOperationsCollection } from "@/components/dashboard/operations/useOp
 import type { DashboardSection } from "@/lib/dashboard-sections";
 import { normalizeText } from "@/lib/inventory";
 import {
-  INCIDENTS,
+  INCIDENT_SEVERITY_OPTIONS,
+  INCIDENT_STATUS_OPTIONS,
   type IncidentItem,
 } from "@/lib/operations-data";
 import {
@@ -53,8 +54,9 @@ function getIncidentMutationErrorMessage(
 }
 
 function toneByLabel(label: string) {
-  if (label.includes("Critico") || label.includes("Desvio") || label.includes("Retido") || label.includes("Alta") || label.includes("Aberto")) return "bg-rose-50 text-rose-700";
-  if (label.includes("Atencao") || label.includes("Em analise") || label.includes("Monitorado") || label.includes("Media") || label.includes("Em andamento") || label.includes("Aguardando")) return "bg-amber-50 text-amber-700";
+  const normalized = normalizeText(label);
+  if (normalized.includes("critico") || normalized.includes("desvio") || normalized.includes("retido") || normalized.includes("alta") || normalized.includes("aberto")) return "bg-rose-50 text-rose-700";
+  if (normalized.includes("atencao") || normalized.includes("em analise") || normalized.includes("monitorado") || normalized.includes("media") || normalized.includes("em andamento") || normalized.includes("aguardando")) return "bg-amber-50 text-amber-700";
   return "bg-emerald-50 text-emerald-700";
 }
 
@@ -68,11 +70,11 @@ export function IncidentsModule({ section }: { section: DashboardSection }) {
   const [error, setError] = useState("");
   const incidentMutation = useErpMutation();
   const severityOptions = useMemo(
-    () => Array.from(new Set(INCIDENTS.map((item) => item.severity))) as IncidentItem["severity"][],
+    () => [...INCIDENT_SEVERITY_OPTIONS] as IncidentItem["severity"][],
     [],
   );
   const statusOptions = useMemo(
-    () => Array.from(new Set(INCIDENTS.map((item) => item.status))) as IncidentItem["status"][],
+    () => [...INCIDENT_STATUS_OPTIONS] as IncidentItem["status"][],
     [],
   );
   const closedStatus = useMemo(
@@ -82,18 +84,18 @@ export function IncidentsModule({ section }: { section: DashboardSection }) {
   const [form, setForm] = useState({
     title: "",
     area: "",
-    severity: INCIDENTS[0]?.severity ?? ("Alta" as IncidentItem["severity"]),
+    severity: severityOptions[0] as IncidentItem["severity"],
     owner: "",
-    status: INCIDENTS[0]?.status ?? ("Aberto" as IncidentItem["status"]),
+    status: statusOptions[0] as IncidentItem["status"],
   });
 
   function resetForm() {
     setForm({
       title: "",
       area: "",
-      severity: INCIDENTS[0]?.severity ?? severityOptions[0],
+      severity: severityOptions[0] as IncidentItem["severity"],
       owner: "",
-      status: INCIDENTS[0]?.status ?? statusOptions[0],
+      status: statusOptions[0] as IncidentItem["status"],
     });
     setEditingIncident(null);
     setError("");
@@ -307,7 +309,7 @@ export function IncidentsModule({ section }: { section: DashboardSection }) {
                 ))}
               </SelectInput>
             </FormField>
-            <FormField label="Responsavel">
+            <FormField label="Responsável">
               <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Marina Azevedo" />
             </FormField>
             <FormField label="Status">
@@ -338,7 +340,7 @@ export function IncidentsModule({ section }: { section: DashboardSection }) {
                     <StatusPill label={item.severity} tone={toneByLabel(item.severity)} />
                     <StatusPill label={item.status} tone={toneByLabel(item.status)} />
                   </div>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.area} · Responsavel: {item.owner}</p>
+                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.area} · Responsável: {item.owner}</p>
                 </div>
                 <div className="flex gap-2">
                   {canUpdateIncidents ? (

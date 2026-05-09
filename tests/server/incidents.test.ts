@@ -15,7 +15,7 @@ import {
   listIncidents,
   updateIncident,
 } from "@/lib/server/incidents";
-import { INCIDENTS } from "@/lib/operations-data";
+import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_STATUS_OPTIONS } from "@/lib/operations-data";
 
 import { FakeFirestoreAdminDb } from "./helpers/fake-firestore";
 
@@ -24,17 +24,17 @@ const ORIGINAL_ENV = { ...process.env };
 const SAMPLE_INCIDENT = {
   title: "Avaria em pallet itemizado",
   area: "Expedicao Dourado",
-  severity: INCIDENTS[0]!.severity,
+  severity: INCIDENT_SEVERITY_OPTIONS[0],
   owner: "Fernanda Rocha",
-  status: INCIDENTS[0]!.status,
+  status: INCIDENT_STATUS_OPTIONS[0],
 };
 
 const SAMPLE_SECOND_INCIDENT = {
   title: "Atraso de coleta itemizado",
   area: "Transporte",
-  severity: INCIDENTS[2]!.severity,
+  severity: INCIDENT_SEVERITY_OPTIONS[2],
   owner: "LogPrime Transportes",
-  status: INCIDENTS[1]!.status,
+  status: INCIDENT_STATUS_OPTIONS[1],
 };
 
 function restoreProcessEnv() {
@@ -112,7 +112,7 @@ describe("incidents item store", () => {
       legacyIncident.id,
       {
         owner: "Marina Azevedo",
-        status: INCIDENTS[2]!.status,
+        status: INCIDENT_STATUS_OPTIONS[2],
       },
       {
         baseVersion: 1,
@@ -123,7 +123,7 @@ describe("incidents item store", () => {
 
     assert.equal(updated.version, 2);
     assert.equal(updated.owner, "Marina Azevedo");
-    assert.equal(updated.status, INCIDENTS[2]!.status);
+    assert.equal(updated.status, INCIDENT_STATUS_OPTIONS[2]);
     assert.equal(loaded.version, 2);
     assert.equal(
       firestore.read("incidents", legacyIncident.id)?.owner,

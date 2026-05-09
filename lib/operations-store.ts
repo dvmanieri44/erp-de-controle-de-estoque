@@ -11,15 +11,22 @@ import {
   DISTRIBUTORS,
   DOCUMENTS,
   INCIDENTS,
+  INCIDENT_SEVERITY_OPTIONS,
+  INCIDENT_STATUS_OPTIONS,
   LOTS,
   NOTIFICATIONS,
   PENDING_ITEMS,
   PLANNING_ITEMS,
+  PRIORITY_OPTIONS,
   PRODUCT_LINES,
+  PRODUCT_SPECIES_OPTIONS,
+  PRODUCT_STATUS_OPTIONS,
   QUALITY_EVENTS,
+  QUALITY_EVENT_STATUS_OPTIONS,
   REPORTS,
   SUPPLIERS,
   TASKS,
+  TASK_STATUS_OPTIONS,
   type CalendarItem,
   type CategoryItem,
   type DistributorItem,
@@ -370,7 +377,7 @@ function saveCollection<T>(key: string, items: T[], resource: ErpResourceId) {
 function isQualityEventStatus(
   value: unknown,
 ): value is QualityEventItem["status"] {
-  return QUALITY_EVENTS.some((item) => item.status === value);
+  return QUALITY_EVENT_STATUS_OPTIONS.includes(value as QualityEventItem["status"]);
 }
 
 function normalizeQualityEventItem(
@@ -698,11 +705,11 @@ export async function deleteQualityEvent(
 function isIncidentSeverity(
   value: unknown,
 ): value is IncidentItem["severity"] {
-  return INCIDENTS.some((item) => item.severity === value);
+  return INCIDENT_SEVERITY_OPTIONS.includes(value as IncidentItem["severity"]);
 }
 
 function isIncidentStatus(value: unknown): value is IncidentItem["status"] {
-  return INCIDENTS.some((item) => item.status === value);
+  return INCIDENT_STATUS_OPTIONS.includes(value as IncidentItem["status"]);
 }
 
 function normalizeIncidentItem(value: unknown): VersionedIncidentItem | null {
@@ -1025,7 +1032,7 @@ export async function deleteIncident(
 }
 
 function isPendingPriority(value: unknown): value is PendingItem["priority"] {
-  return PENDING_ITEMS.some((item) => item.priority === value);
+  return PRIORITY_OPTIONS.includes(value as PendingItem["priority"]);
 }
 
 function normalizePendingItem(value: unknown): VersionedPendingItem | null {
@@ -1344,7 +1351,7 @@ export async function deletePendingItem(
 }
 
 function isTaskStatus(value: unknown): value is TaskItem["status"] {
-  return TASKS.some((item) => item.status === value);
+  return TASK_STATUS_OPTIONS.includes(value as TaskItem["status"]);
 }
 
 function normalizeTaskItem(value: unknown): VersionedTaskItem | null {
@@ -1980,11 +1987,11 @@ function normalizeProductSku(value: string) {
 }
 
 function isProductSpecies(value: unknown): value is ProductLineItem["species"] {
-  return PRODUCT_LINES.some((item) => item.species === value);
+  return PRODUCT_SPECIES_OPTIONS.includes(value as ProductLineItem["species"]);
 }
 
 function isProductStatus(value: unknown): value is ProductLineItem["status"] {
-  return PRODUCT_LINES.some((item) => item.status === value);
+  return PRODUCT_STATUS_OPTIONS.includes(value as ProductLineItem["status"]);
 }
 
 function normalizeProductLineItem(

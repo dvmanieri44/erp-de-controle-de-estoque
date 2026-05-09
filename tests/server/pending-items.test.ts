@@ -15,7 +15,7 @@ import {
   PendingNotFoundError,
   updatePendingItem,
 } from "@/lib/server/pending-items";
-import { PENDING_ITEMS } from "@/lib/operations-data";
+import { PRIORITY_OPTIONS } from "@/lib/operations-data";
 
 import { FakeFirestoreAdminDb } from "./helpers/fake-firestore";
 
@@ -26,7 +26,7 @@ const SAMPLE_PENDING_ITEM = {
   owner: "Carlos Menezes",
   area: "CD Sudeste",
   due: "Hoje, 17:30",
-  priority: PENDING_ITEMS[0]!.priority,
+  priority: PRIORITY_OPTIONS[0],
 };
 
 const SAMPLE_SECOND_PENDING_ITEM = {
@@ -34,7 +34,7 @@ const SAMPLE_SECOND_PENDING_ITEM = {
   owner: "Luciana Prado",
   area: "Qualidade",
   due: "Hoje, 14:00",
-  priority: PENDING_ITEMS[1]!.priority,
+  priority: PRIORITY_OPTIONS[1],
 };
 
 function restoreProcessEnv() {
@@ -112,7 +112,7 @@ describe("pending item store", () => {
       legacyItem.id,
       {
         owner: "Marina Azevedo",
-        priority: PENDING_ITEMS[2]!.priority,
+        priority: PRIORITY_OPTIONS[2],
       },
       {
         baseVersion: 1,
@@ -123,7 +123,7 @@ describe("pending item store", () => {
 
     assert.equal(updated.version, 2);
     assert.equal(updated.owner, "Marina Azevedo");
-    assert.equal(updated.priority, PENDING_ITEMS[2]!.priority);
+    assert.equal(updated.priority, PRIORITY_OPTIONS[2]);
     assert.equal(loaded.version, 2);
     assert.equal(firestore.read("pending", legacyItem.id)?.owner, "Marina Azevedo");
     assert.equal(payload.count, 2);

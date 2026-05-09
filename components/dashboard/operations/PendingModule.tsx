@@ -15,8 +15,9 @@ import {
 } from "@/components/dashboard/operations/ui";
 import { useOperationsCollection } from "@/components/dashboard/operations/useOperationsCollection";
 import type { DashboardSection } from "@/lib/dashboard-sections";
+import { normalizeText } from "@/lib/inventory";
 import {
-  PENDING_ITEMS,
+  PRIORITY_OPTIONS,
   type PendingItem,
 } from "@/lib/operations-data";
 import {
@@ -52,8 +53,9 @@ function getPendingMutationErrorMessage(
 }
 
 function toneByLabel(label: string) {
-  if (label.includes("Critico") || label.includes("Desvio") || label.includes("Retido") || label.includes("Alta") || label.includes("Aberto")) return "bg-rose-50 text-rose-700";
-  if (label.includes("Atencao") || label.includes("Em analise") || label.includes("Monitorado") || label.includes("Media") || label.includes("Em andamento") || label.includes("Aguardando")) return "bg-amber-50 text-amber-700";
+  const normalized = normalizeText(label);
+  if (normalized.includes("critico") || normalized.includes("desvio") || normalized.includes("retido") || normalized.includes("alta") || normalized.includes("aberto")) return "bg-rose-50 text-rose-700";
+  if (normalized.includes("atencao") || normalized.includes("em analise") || normalized.includes("monitorado") || normalized.includes("media") || normalized.includes("em andamento") || normalized.includes("aguardando")) return "bg-amber-50 text-amber-700";
   return "bg-emerald-50 text-emerald-700";
 }
 
@@ -65,13 +67,13 @@ export function PendingModule({ section }: { section: DashboardSection }) {
   const [editingItem, setEditingItem] = useState<VersionedPendingItem | null>(null);
   const [error, setError] = useState("");
   const pendingMutation = useErpMutation();
-  const priorityOptions = useMemo(() => Array.from(new Set(PENDING_ITEMS.map((item) => item.priority))) as PendingItem["priority"][], []);
+  const priorityOptions = useMemo(() => [...PRIORITY_OPTIONS] as PendingItem["priority"][], []);
   const [form, setForm] = useState({
     title: "",
     owner: "",
     area: "",
     due: "",
-    priority: PENDING_ITEMS[0]?.priority ?? priorityOptions[0],
+    priority: priorityOptions[0] as PendingItem["priority"],
   });
 
   function resetForm() {
@@ -80,7 +82,7 @@ export function PendingModule({ section }: { section: DashboardSection }) {
       owner: "",
       area: "",
       due: "",
-      priority: PENDING_ITEMS[0]?.priority ?? priorityOptions[0],
+      priority: priorityOptions[0] as PendingItem["priority"],
     });
     setEditingItem(null);
     setError("");
@@ -224,7 +226,7 @@ export function PendingModule({ section }: { section: DashboardSection }) {
 
   return (
     <section className="space-y-8">
-      <Hero section={section} eyebrow="Execucao" actions={<ActionButton tone="primary" onClick={() => setIsFormOpen(true)}>Nova pendencia</ActionButton>} />
+      <Hero section={section} eyebrow="Execução" actions={<ActionButton tone="primary" onClick={() => setIsFormOpen(true)}>Nova pendência</ActionButton>} />
 
       {isFormOpen ? (
         <InlineFormPanel
@@ -239,7 +241,7 @@ export function PendingModule({ section }: { section: DashboardSection }) {
             <FormField label="Titulo">
               <TextInput value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Ex.: Confirmar recebimento do TRF" />
             </FormField>
-            <FormField label="Responsavel">
+            <FormField label="Responsável">
               <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Carlos Menezes" />
             </FormField>
             <FormField label="Area">
@@ -275,7 +277,7 @@ export function PendingModule({ section }: { section: DashboardSection }) {
                     <p className="font-semibold text-[var(--foreground)]">{item.title}</p>
                     <StatusPill label={item.priority} tone={toneByLabel(item.priority)} />
                   </div>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.area} · Responsavel: {item.owner}</p>
+                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.area} · Responsável: {item.owner}</p>
                   <p className="mt-1 text-sm font-medium text-[var(--navy-900)]">{item.due}</p>
                 </div>
                 <div className="flex gap-2">
