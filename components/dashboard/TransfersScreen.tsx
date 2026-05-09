@@ -8,23 +8,26 @@ import {
   buildLocalLocationStockBalanceMap,
   buildLotOptionValue,
   buildProductOptionValue,
+  fetchLocationStockBalancesWithFallback,
   getLocationStockBalance,
-  isLotCompatibleWithProduct,
+  getInventoryErrorMessage,
+  loadMovementsWithStockRefresh,
   resolveLotProduct,
   resolveLotSelection,
+  resolveProductLotIdentity,
   resolveProductSelection,
+  resolveValidationLocationStockBalances,
+  reloadMovementsWithStockAfterConflict,
   revertMovementFromLocationStockBalances,
+  type LocationStockBalanceResolution,
 } from "@/components/dashboard/inventory/movement-form-helpers";
 import {
   DATE_RANGE_OPTIONS,
-  INITIAL_LOCATIONS,
   TRANSFER_PRIORITY_OPTIONS,
   TRANSFER_STATUS_OPTIONS,
-  buildLocationStockBalanceMap,
   buildTransferCode,
   createMovement,
   deleteMovement,
-  fetchLocationStockBalances,
   formatDateTime,
   formatUnits,
   getMovementStatusLabel,
@@ -34,9 +37,7 @@ import {
   loadMovements,
   matchesDateRange,
   MovementVersionConflictError,
-  normalizeReferenceText,
   normalizeText,
-  refreshLocationStockBalances,
   refreshMovements,
   type DateRangeFilter,
   type LocationItem,
@@ -235,10 +236,11 @@ function buildTimeline(transfer: MovementItem) {
 }
 
 export function TransfersScreen() {
-  const { canDelete, canUpdate } = useErpPermissions();
+  const { canCreate, canDelete, canUpdate } = useErpPermissions();
+  const canCreateMovements = canCreate("inventory.movements");
   const canDeleteMovements = canDelete("inventory.movements");
   const canUpdateMovements = canUpdate("inventory.movements");
-  const [locations, setLocations] = useState<LocationItem[]>(INITIAL_LOCATIONS);
+  const [locations, setLocations] = useState<LocationItem[]>([]);
   const [movements, setMovements] = useState<VersionedMovementItem[]>([]);
   const [locationStockBalances, setLocationStockBalances] = useState<LocationStockBalanceMap>(() => new Map());
   const [isUsingStockFallback, setIsUsingStockFallback] = useState(false);
@@ -262,38 +264,34 @@ export function TransfersScreen() {
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
   const fallbackWarningShownRef = useRef(false);
 
+  function applyStockResolution(stockResolution: LocationStockBalanceResolution) {
+    setLocationStockBalances(stockResolution.balances);
+    setIsUsingStockFallback(stockResolution.isUsingFallback);
+
+    if (!stockResolution.isUsingFallback) {
+      fallbackWarningShownRef.current = false;
+    }
+  }
+
   useEffect(() => {
     let isActive = true;
 
     async function syncLocationStock(nextMovements: VersionedMovementItem[]) {
-      try {
-        const balances = buildLocationStockBalanceMap(
-          await fetchLocationStockBalances(),
-        );
+      const stockResolution = await fetchLocationStockBalancesWithFallback(nextMovements);
 
-        if (!isActive) {
-          return;
-        }
+      if (!isActive) {
+        return;
+      }
 
-        setLocationStockBalances(balances);
-        setIsUsingStockFallback(false);
-        fallbackWarningShownRef.current = false;
-      } catch {
-        if (!isActive) {
-          return;
-        }
+      applyStockResolution(stockResolution);
 
-        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-        setIsUsingStockFallback(true);
-
-        if (!fallbackWarningShownRef.current) {
-          fallbackWarningShownRef.current = true;
-          setToast({
-            id: Date.now(),
-            message: "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
-            tone: "error",
-          });
-        }
+      if (stockResolution.isUsingFallback && !fallbackWarningShownRef.current) {
+        fallbackWarningShownRef.current = true;
+        setToast({
+          id: Date.now(),
+          message: "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
+          tone: "error",
+        });
       }
     }
 
@@ -551,6 +549,33 @@ export function TransfersScreen() {
   }
 
   function openModal(transfer?: MovementItem) {
+    if (transfer && !canUpdateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode editar transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (!transfer && !canCreateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode criar transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (!transfer && locations.length < 2) {
+      setToast({
+        id: Date.now(),
+        message: "Cadastre pelo menos duas localizacoes antes de criar transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
     setIsModalOpen(true);
     setEditingId(transfer?.id ?? null);
     setForm({
@@ -633,32 +658,10 @@ export function TransfersScreen() {
     return nextErrors;
   }
 
-  function getErrorMessage(error: unknown, fallback: string) {
-    return error instanceof Error ? error.message : fallback;
-  }
-
   async function reloadMovementsAfterConflict(message: string) {
-    let nextMovements = loadMovements();
-
-    try {
-      nextMovements = await refreshMovements();
-    } catch {
-      nextMovements = loadMovements();
-    }
-
-    setMovements(nextMovements);
-
-    try {
-      const balances = buildLocationStockBalanceMap(
-        await refreshLocationStockBalances(),
-      );
-      setLocationStockBalances(balances);
-      setIsUsingStockFallback(false);
-      fallbackWarningShownRef.current = false;
-    } catch {
-      setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-      setIsUsingStockFallback(true);
-    }
+    const result = await reloadMovementsWithStockAfterConflict();
+    setMovements(result.movements);
+    applyStockResolution(result.stock);
 
     setToast({
       id: Date.now(),
@@ -668,52 +671,36 @@ export function TransfersScreen() {
   }
 
   async function resolveValidationStockBalances() {
-    try {
-      const balances = buildLocationStockBalanceMap(
-        await fetchLocationStockBalances(),
-      );
-      setLocationStockBalances(balances);
-      setIsUsingStockFallback(false);
-      fallbackWarningShownRef.current = false;
-      return revertMovementFromLocationStockBalances(balances, currentTransfer);
-    } catch {
-      const fallbackBalances = buildLocalLocationStockBalanceMap(
-        movements.filter((movement) => movement.id !== editingId),
-      );
-      setLocationStockBalances(buildLocalLocationStockBalanceMap(movements));
-      setIsUsingStockFallback(true);
+    const stockResolution = await resolveValidationLocationStockBalances({
+      movements,
+      currentMovement: currentTransfer,
+      editingId,
+    });
+    applyStockResolution(stockResolution);
 
-      if (!fallbackWarningShownRef.current) {
-        fallbackWarningShownRef.current = true;
-        setToast({
-          id: Date.now(),
-          message:
-            "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
-          tone: "error",
-        });
-      }
-
-      return fallbackBalances;
+    if (!stockResolution.isUsingFallback) {
+      return stockResolution.validationBalances;
     }
+
+    if (!fallbackWarningShownRef.current) {
+      fallbackWarningShownRef.current = true;
+      setToast({
+        id: Date.now(),
+        message:
+          "Nao foi possivel carregar o saldo consolidado. O formulario esta usando fallback local temporariamente.",
+        tone: "error",
+      });
+    }
+
+    return stockResolution.validationBalances;
   }
 
   async function restoreTransfer(removed: VersionedMovementItem) {
     try {
       await createMovement(removed);
-      const nextMovements = loadMovements();
-      setMovements(nextMovements);
-
-      try {
-        const balances = buildLocationStockBalanceMap(
-          await refreshLocationStockBalances(),
-        );
-        setLocationStockBalances(balances);
-        setIsUsingStockFallback(false);
-        fallbackWarningShownRef.current = false;
-      } catch {
-        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-        setIsUsingStockFallback(true);
-      }
+      const result = await loadMovementsWithStockRefresh();
+      setMovements(result.movements);
+      applyStockResolution(result.stock);
       setToast({
         id: Date.now(),
         message: "Transferência restaurada.",
@@ -722,13 +709,31 @@ export function TransfersScreen() {
     } catch (error) {
       setToast({
         id: Date.now(),
-        message: getErrorMessage(error, "Não foi possível restaurar a transferência."),
+        message: getInventoryErrorMessage(error, "Não foi possível restaurar a transferência."),
         tone: "error",
       });
     }
   }
 
   async function handleSubmit() {
+    if (editingId && !canUpdateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode editar transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (!editingId && !canCreateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode criar transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
     const stockBalances = await resolveValidationStockBalances();
     const nextErrors = validateForm(form, stockBalances);
     setErrors(nextErrors);
@@ -738,37 +743,22 @@ export function TransfersScreen() {
     }
 
     const now = new Date().toISOString();
-    const matchedProduct =
-      (form.productId
-        ? productCatalog.find(
-            (product) =>
-              normalizeReferenceText(product.sku) === normalizeReferenceText(form.productId),
-          ) ?? null
-        : null) ?? resolveProductSelection(productCatalog, form.product);
-    const matchedLot = resolveLotSelection(lotCatalog, form.lotCode);
-    const shouldPreserveCurrentProductId =
-      !matchedProduct &&
-      !!currentTransfer?.productId &&
-      normalizeReferenceText(form.product) === normalizeReferenceText(currentTransfer.product);
-    const shouldPreserveCurrentLotCode =
-      !matchedLot &&
-      !!currentTransfer?.lotCode &&
-      normalizeReferenceText(form.lotCode) === normalizeReferenceText(currentTransfer.lotCode);
-    const finalProductId = matchedProduct?.sku ?? (shouldPreserveCurrentProductId ? currentTransfer?.productId : undefined);
-    const finalLotCode = matchedLot?.code ?? (shouldPreserveCurrentLotCode ? currentTransfer?.lotCode : undefined);
-    const identityErrors: FormErrors = {};
-
-    if (matchedProduct && !finalProductId) {
-      identityErrors.product = PRODUCT_ID_REQUIRED_MESSAGE;
-    }
-
-    if (matchedLot && !finalLotCode) {
-      identityErrors.lotCode = LOT_CODE_REQUIRED_MESSAGE;
-    }
-
-    if (matchedLot && matchedProduct && !isLotCompatibleWithProduct(matchedLot, matchedProduct, productCatalog)) {
-      identityErrors.lotCode = LOT_PRODUCT_MISMATCH_MESSAGE;
-    }
+    const identity = resolveProductLotIdentity({
+      productCatalog,
+      lotCatalog,
+      product: form.product,
+      productId: form.productId,
+      lotCode: form.lotCode,
+      currentProduct: currentTransfer?.product,
+      currentProductId: currentTransfer?.productId,
+      currentLotCode: currentTransfer?.lotCode,
+      messages: {
+        productIdRequired: PRODUCT_ID_REQUIRED_MESSAGE,
+        lotCodeRequired: LOT_CODE_REQUIRED_MESSAGE,
+        lotProductMismatch: LOT_PRODUCT_MISMATCH_MESSAGE,
+      },
+    });
+    const identityErrors: FormErrors = identity.errors;
 
     if (Object.keys(identityErrors).length > 0) {
       setErrors((current) => ({ ...current, ...identityErrors }));
@@ -777,9 +767,9 @@ export function TransfersScreen() {
 
     const transfer: VersionedMovementItem = {
       id: editingId ?? `mov-${Date.now()}`,
-      product: matchedProduct?.product ?? form.product.trim(),
-      productId: finalProductId,
-      lotCode: finalLotCode,
+      product: identity.matchedProduct?.product ?? form.product.trim(),
+      productId: identity.productId,
+      lotCode: identity.lotCode,
       type: "transferencia",
       quantity: Number(form.quantity),
       reason: form.reason.trim(),
@@ -813,22 +803,11 @@ export function TransfersScreen() {
         await createMovement(transfer);
       }
 
-        const nextMovements = loadMovements();
-        setMovements(nextMovements);
+      const result = await loadMovementsWithStockRefresh();
+      setMovements(result.movements);
+      applyStockResolution(result.stock);
 
-        try {
-          const balances = buildLocationStockBalanceMap(
-            await refreshLocationStockBalances(),
-          );
-          setLocationStockBalances(balances);
-          setIsUsingStockFallback(false);
-          fallbackWarningShownRef.current = false;
-        } catch {
-          setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-          setIsUsingStockFallback(true);
-        }
-
-        setToast({
+      setToast({
         id: Date.now(),
         message: editingId ? "Transferência atualizada com sucesso." : "Transferência registrada com sucesso.",
         tone: "success",
@@ -845,13 +824,31 @@ export function TransfersScreen() {
 
       setToast({
         id: Date.now(),
-        message: getErrorMessage(error, "Não foi possível salvar a transferência."),
+        message: getInventoryErrorMessage(error, "Não foi possível salvar a transferência."),
         tone: "error",
       });
     }
   }
 
   function handleDuplicate(transfer: MovementItem) {
+    if (!canCreateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode criar transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (locations.length < 2) {
+      setToast({
+        id: Date.now(),
+        message: "Cadastre pelo menos duas localizacoes antes de criar transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
     setIsModalOpen(true);
     setEditingId(null);
     setForm({
@@ -907,20 +904,9 @@ export function TransfersScreen() {
       }
 
       await deleteMovement(removed.id, removed.version);
-      const nextMovements = loadMovements();
-      setMovements(nextMovements);
-
-      try {
-        const balances = buildLocationStockBalanceMap(
-          await refreshLocationStockBalances(),
-        );
-        setLocationStockBalances(balances);
-        setIsUsingStockFallback(false);
-        fallbackWarningShownRef.current = false;
-      } catch {
-        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-        setIsUsingStockFallback(true);
-      }
+      const result = await loadMovementsWithStockRefresh();
+      setMovements(result.movements);
+      applyStockResolution(result.stock);
 
       setToast({
         id: Date.now(),
@@ -941,7 +927,7 @@ export function TransfersScreen() {
 
       setToast({
         id: Date.now(),
-        message: getErrorMessage(error, "Não foi possível excluir a transferência."),
+        message: getInventoryErrorMessage(error, "Não foi possível excluir a transferência."),
         tone: "error",
       });
       setDeleteTarget(removed);
@@ -949,6 +935,15 @@ export function TransfersScreen() {
   }
 
   async function handleAdvanceStatus(transfer: VersionedMovementItem) {
+    if (!canUpdateMovements) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode atualizar transferencias.",
+        tone: "error",
+      });
+      return;
+    }
+
     const currentStatus = transfer.transferStatus ?? "solicitada";
     const nextStatus =
       currentStatus === "solicitada"
@@ -982,20 +977,9 @@ export function TransfersScreen() {
         },
         transfer.version,
       );
-      const nextMovements = loadMovements();
-      setMovements(nextMovements);
-
-      try {
-        const balances = buildLocationStockBalanceMap(
-          await refreshLocationStockBalances(),
-        );
-        setLocationStockBalances(balances);
-        setIsUsingStockFallback(false);
-        fallbackWarningShownRef.current = false;
-      } catch {
-        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-        setIsUsingStockFallback(true);
-      }
+      const result = await loadMovementsWithStockRefresh();
+      setMovements(result.movements);
+      applyStockResolution(result.stock);
 
       setToast({
         id: Date.now(),
@@ -1012,7 +996,7 @@ export function TransfersScreen() {
 
       setToast({
         id: Date.now(),
-        message: getErrorMessage(error, "Não foi possível atualizar o status da transferência."),
+        message: getInventoryErrorMessage(error, "Não foi possível atualizar o status da transferência."),
         tone: "error",
       });
     }
@@ -1037,20 +1021,9 @@ export function TransfersScreen() {
 
     try {
       await deleteMovement(transfer.id, transfer.version, { mode: "cancel" });
-      const nextMovements = loadMovements();
-      setMovements(nextMovements);
-
-      try {
-        const balances = buildLocationStockBalanceMap(
-          await refreshLocationStockBalances(),
-        );
-        setLocationStockBalances(balances);
-        setIsUsingStockFallback(false);
-        fallbackWarningShownRef.current = false;
-      } catch {
-        setLocationStockBalances(buildLocalLocationStockBalanceMap(nextMovements));
-        setIsUsingStockFallback(true);
-      }
+      const result = await loadMovementsWithStockRefresh();
+      setMovements(result.movements);
+      applyStockResolution(result.stock);
 
       setToast({
         id: Date.now(),
@@ -1067,7 +1040,7 @@ export function TransfersScreen() {
 
       setToast({
         id: Date.now(),
-        message: getErrorMessage(error, "Não foi possível cancelar a transferência."),
+        message: getInventoryErrorMessage(error, "Não foi possível cancelar a transferência."),
         tone: "error",
       });
     }
@@ -1090,7 +1063,8 @@ export function TransfersScreen() {
     ]);
   }
 
-  const canCreateTransfer = locations.length >= 2;
+  const hasLocationsForTransfer = locations.length >= 2;
+  const canCreateTransfer = canCreateMovements && hasLocationsForTransfer;
 
   return (
     <section className="relative space-y-6 pb-8">
@@ -1252,7 +1226,11 @@ export function TransfersScreen() {
 
       {!canCreateTransfer ? (
         <div className="rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel)] px-5 py-10 text-center">
-          <p className="text-sm font-medium text-[var(--foreground)]">Cadastre pelo menos duas localizações antes de criar transferências.</p>
+          <p className="text-sm font-medium text-[var(--foreground)]">
+            {hasLocationsForTransfer
+              ? "Seu perfil nao pode criar transferencias."
+              : "Cadastre pelo menos duas localizações antes de criar transferências."}
+          </p>
         </div>
       ) : null}
 
@@ -1277,7 +1255,7 @@ export function TransfersScreen() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {(transfer.transferStatus ?? "solicitada") !== "recebida" && (transfer.transferStatus ?? "solicitada") !== "cancelada" ? (
+                {canUpdateMovements && (transfer.transferStatus ?? "solicitada") !== "recebida" && (transfer.transferStatus ?? "solicitada") !== "cancelada" ? (
                   <button
                     type="button"
                     onClick={() => handleAdvanceStatus(transfer)}
@@ -1300,18 +1278,22 @@ export function TransfersScreen() {
                     <path d={expandedIds.includes(transfer.id) ? "M6 15l6-6 6 6" : "m6 9 6 6 6-6"} />
                   </svg>
                 </ActionButton>
-                <ActionButton label={`Editar transferência de ${transfer.product}`} onClick={() => openModal(transfer)}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                    <path d="M4 20h4l10-10-4-4L4 16v4Z" />
-                    <path d="m12.5 7.5 4 4" />
-                  </svg>
-                </ActionButton>
-                <ActionButton label={`Duplicar transferência de ${transfer.product}`} onClick={() => handleDuplicate(transfer)}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                    <rect x="9" y="9" width="10" height="10" rx="2" />
-                    <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
-                  </svg>
-                </ActionButton>
+                {canUpdateMovements ? (
+                  <ActionButton label={`Editar transferência de ${transfer.product}`} onClick={() => openModal(transfer)}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                      <path d="M4 20h4l10-10-4-4L4 16v4Z" />
+                      <path d="m12.5 7.5 4 4" />
+                    </svg>
+                  </ActionButton>
+                ) : null}
+                {canCreateTransfer ? (
+                  <ActionButton label={`Duplicar transferência de ${transfer.product}`} onClick={() => handleDuplicate(transfer)}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                      <rect x="9" y="9" width="10" height="10" rx="2" />
+                      <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+                    </svg>
+                  </ActionButton>
+                ) : null}
                 {canDeleteMovements ? (
                   <ActionButton label={`Excluir transferência de ${transfer.product}`} onClick={() => setDeleteTarget(transfer)} tone="danger">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">

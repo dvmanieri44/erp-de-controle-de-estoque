@@ -244,7 +244,7 @@ export function DocumentsModule({ section }: { section: DashboardSection }) {
             <FormField label="Atualizado em">
               <TextInput value={form.updatedAt} onChange={(event) => setForm((current) => ({ ...current, updatedAt: event.target.value }))} placeholder="Ex.: Hoje, 10:30" />
             </FormField>
-            <FormField label="Responsavel">
+            <FormField label="Responsável">
               <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Tatiane Freitas" />
             </FormField>
           </div>
@@ -275,7 +275,7 @@ export function DocumentsModule({ section }: { section: DashboardSection }) {
             <p className="mt-2 text-sm text-[var(--muted-foreground)]">{item.area}</p>
             <div className="mt-5 grid gap-3 text-sm text-[var(--muted-foreground)] sm:grid-cols-2">
               <p>Atualizado em: {item.updatedAt}</p>
-              <p>Responsavel: {item.owner}</p>
+              <p>Responsável: {item.owner}</p>
             </div>
           </article>
         ))}

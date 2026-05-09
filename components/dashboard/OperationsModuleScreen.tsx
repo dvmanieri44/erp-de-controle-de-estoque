@@ -24,16 +24,20 @@ import { ERP_DATA_EVENT } from "@/lib/app-events";
 import type { DashboardSection } from "@/lib/dashboard-sections";
 import {
   CALENDAR_EVENTS,
+  CALENDAR_TYPE_OPTIONS,
   type CalendarItem,
   CATEGORIES,
   type CategoryItem,
   DISTRIBUTORS,
+  DISTRIBUTOR_STATUS_OPTIONS,
   type DistributorItem,
   LOTS,
+  LOT_STATUS_OPTIONS,
   type LotItem,
   NOTIFICATIONS,
   type NotificationItem,
   PLANNING_ITEMS,
+  PRIORITY_OPTIONS,
   type PlanningItem,
   PRODUCT_LINES,
   type ProductLineItem,
@@ -188,11 +192,11 @@ const NOTIFICATION_STATUS_DONE = "Conclu\u00edda" as NotificationItem["status"];
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function resolveProductStatus(stock: number, target: number, coverageDays: number): string {
   if (coverageDays <= 7 || stock <= target * 0.5) {
-    return "Critico";
+    return "Crítico";
   }
 
   if (coverageDays <= 14 || stock < target) {
-    return "Atencao";
+    return "Atenção";
   }
 
   return "Estavel";
@@ -404,7 +408,7 @@ function ProductsModule({ section }: { section: DashboardSection }) {
     sku: "",
     product: "",
     line: "",
-    species: PRODUCT_LINES[0]?.species ?? PRODUCT_SPECIES_DOGS,
+    species: PRODUCT_SPECIES_DOGS,
     stage: "",
     package: "",
     stock: "",
@@ -440,7 +444,7 @@ function ProductsModule({ section }: { section: DashboardSection }) {
       sku: "",
       product: "",
       line: "",
-      species: PRODUCT_LINES[0]?.species ?? PRODUCT_SPECIES_DOGS,
+      species: PRODUCT_SPECIES_DOGS,
       stage: "",
       package: "",
       stock: "",
@@ -613,8 +617,8 @@ function ProductsModule({ section }: { section: DashboardSection }) {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Total de Produtos" value={String(filtered.length)} helper="SKUs ativos dentro do recorte atual" />
         <SummaryCard title="Volume em Estoque" value={formatUnits(totalStock)} helper="Saldo consolidado das linhas visiveis" />
-        <SummaryCard title="Cobertura Media" value={`${avgCoverage} dias`} helper="Media de cobertura do mix selecionado" />
-        <SummaryCard title="Produtos Criticos" value={String(critical)} helper="Itens abaixo da meta de abastecimento" tone="danger" />
+        <SummaryCard title="Cobertura Média" value={`${avgCoverage} dias`} helper="Média de cobertura do mix selecionado" />
+        <SummaryCard title="Produtos Críticos" value={String(critical)} helper="Itens abaixo da meta de abastecimento" tone="danger" />
       </div>
 
       <Panel title="Inventario de produtos" eyebrow="Estoque">
@@ -624,7 +628,7 @@ function ProductsModule({ section }: { section: DashboardSection }) {
               <div>
                 <p className="font-semibold text-[var(--foreground)]">{item.product}</p>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                  {item.species} Â· {item.stage} Â· {item.package}
+                  {item.species} · {item.stage} · {item.package}
                 </p>
               </div>
               <p className="text-sm text-[var(--foreground)]">{item.sku}</p>
@@ -649,7 +653,7 @@ function LowStockModule({ section }: { section: DashboardSection }) {
   const [storedProducts] = useOperationsCollection(loadProductLines);
   const { movements } = useInventoryData();
   const products = useMemo(() => getProductsWithDerivedStock(storedProducts, movements), [movements, storedProducts]);
-  const criticalItems = products.filter((item) => item.status !== "Estável");
+  const criticalItems = products.filter((item) => item.status !== PRODUCT_STATUS_STABLE);
 
   return (
     <section className="space-y-8">
@@ -657,15 +661,15 @@ function LowStockModule({ section }: { section: DashboardSection }) {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <SummaryCard title="Total em Alerta" value={String(criticalItems.length)} helper="Produtos com necessidade de reposição" tone="warning" />
-        <SummaryCard title="Crítico" value={String(criticalItems.filter((item) => item.status === "Crítico").length)} helper="Necessitam ação imediata" tone="danger" />
-        <SummaryCard title="Atenção" value={String(criticalItems.filter((item) => item.status === "Atenção").length)} helper="Planejar reabastecimento em breve" tone="warning" />
+        <SummaryCard title="Crítico" value={String(criticalItems.filter((item) => item.status === PRODUCT_STATUS_CRITICAL).length)} helper="Necessitam ação imediata" tone="danger" />
+        <SummaryCard title="Atenção" value={String(criticalItems.filter((item) => item.status === PRODUCT_STATUS_ATTENTION).length)} helper="Planejar reabastecimento em breve" tone="warning" />
       </div>
 
       <Panel title="Estoque crítico" eyebrow="Prioridade">
         <div className="space-y-4">
           {criticalItems.map((item) => {
             const suggested = Math.max(0, item.target - item.stock) + Math.round(item.target * 0.3);
-            const tone = item.status === "Crítico" ? "border-l-4 border-l-rose-500" : "border-l-4 border-l-amber-500";
+            const tone = item.status === PRODUCT_STATUS_CRITICAL ? "border-l-4 border-l-rose-500" : "border-l-4 border-l-amber-500";
 
             return (
               <article key={item.sku} className={`rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-5 ${tone}`}>
@@ -678,7 +682,7 @@ function LowStockModule({ section }: { section: DashboardSection }) {
                     <p className="mt-1 text-sm text-[var(--muted-foreground)]">SKU {item.sku}</p>
                   </div>
                   <div className="text-left lg:text-right">
-                    <p className={`text-4xl font-semibold tracking-[-0.04em] ${item.status === "Crítico" ? "text-rose-600" : "text-amber-600"}`}>{item.stock}</p>
+                    <p className={`text-4xl font-semibold tracking-[-0.04em] ${item.status === PRODUCT_STATUS_CRITICAL ? "text-rose-600" : "text-amber-600"}`}>{item.stock}</p>
                     <p className="text-sm text-[var(--muted-foreground)]">Quantidade atual</p>
                   </div>
                 </div>
@@ -702,9 +706,9 @@ function LowStockModule({ section }: { section: DashboardSection }) {
                   </div>
                 </div>
 
-                <div className={`mt-5 rounded-2xl px-4 py-3 text-sm ${item.status === "Crítico" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>
+                <div className={`mt-5 rounded-2xl px-4 py-3 text-sm ${item.status === PRODUCT_STATUS_CRITICAL ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>
                   <span className="font-semibold">Ação recomendada:</span>{" "}
-                  {item.status === "Crítico" ? "reabastecer imediatamente." : "planejar reabastecimento em breve."} Quantidade sugerida: {suggested} unidades.
+                  {item.status === PRODUCT_STATUS_CRITICAL ? "reabastecer imediatamente." : "planejar reabastecimento em breve."} Quantidade sugerida: {suggested} unidades.
                 </div>
               </article>
             );
@@ -748,13 +752,20 @@ function LotsModule({ section }: { section: DashboardSection }) {
   const [lots, setLots] = useOperationsCollection(loadLots);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    code: string;
+    product: string;
+    location: string;
+    expiration: string;
+    quantity: string;
+    status: LotItem["status"];
+  }>({
     code: "",
     product: "",
     location: "",
     expiration: "",
     quantity: "",
-    status: LOTS[0]?.status ?? LOT_STATUS_RELEASED,
+    status: LOT_STATUS_OPTIONS[0] ?? LOT_STATUS_RELEASED,
   });
 
   function resetForm() {
@@ -764,7 +775,7 @@ function LotsModule({ section }: { section: DashboardSection }) {
       location: "",
       expiration: "",
       quantity: "",
-      status: LOTS[0]?.status ?? LOT_STATUS_RELEASED,
+      status: LOT_STATUS_OPTIONS[0] ?? LOT_STATUS_RELEASED,
     });
     setError("");
     setIsFormOpen(false);
@@ -945,7 +956,7 @@ function SuppliersModule({ section }: { section: DashboardSection }) {
     city: "",
     leadTimeDays: "",
     score: "",
-    status: SUPPLIERS[0]?.status ?? SUPPLIER_STATUS_APPROVED,
+    status: SUPPLIER_STATUS_APPROVED,
   });
 
   function resetForm() {
@@ -955,7 +966,7 @@ function SuppliersModule({ section }: { section: DashboardSection }) {
       city: "",
       leadTimeDays: "",
       score: "",
-      status: SUPPLIERS[0]?.status ?? SUPPLIER_STATUS_APPROVED,
+      status: SUPPLIER_STATUS_APPROVED,
     });
     setEditingName(null);
     setError("");
@@ -1410,12 +1421,12 @@ function PlanningModule({ section }: { section: DashboardSection }) {
   const [form, setForm] = useState({
     route: "",
     window: "",
-    priority: PLANNING_ITEMS[0]?.priority ?? ("Alta" as PlanningItem["priority"]),
+    priority: PRIORITY_OPTIONS[0] as PlanningItem["priority"],
     demand: "",
     coverage: "",
   });
   const priorityOptions = useMemo(
-    () => Array.from(new Set(PLANNING_ITEMS.map((item) => item.priority))) as PlanningItem["priority"][],
+    () => [...PRIORITY_OPTIONS] as PlanningItem["priority"][],
     [],
   );
 
@@ -1423,7 +1434,7 @@ function PlanningModule({ section }: { section: DashboardSection }) {
     setForm({
       route: "",
       window: "",
-      priority: PLANNING_ITEMS[0]?.priority ?? priorityOptions[0],
+      priority: priorityOptions[0],
       demand: "",
       coverage: "",
     });
@@ -1543,7 +1554,7 @@ function PlanningModule({ section }: { section: DashboardSection }) {
         <SummaryCard title="Prioridade alta" value={String(plans.filter((item) => item.priority === "Alta").length)} helper="Acoes criticas para hoje e amanha" tone="danger" />
       </div>
 
-      <Panel title="Plano mestre de abastecimento" eyebrow="Execucao">
+      <Panel title="Plano mestre de abastecimento" eyebrow="Execução">
         <div className="space-y-4">
           {plans.map((item) => (
             <article key={item.route} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-soft)] p-4">
@@ -1785,7 +1796,7 @@ function ReportsModule({ section }: { section: DashboardSection }) {
       ["Eventos operacionais", String(movements.length)],
       ["Volume ocupado", String(totalCapacityUsed)],
       [""],
-      ["Relatorio", "Cadencia", "Responsavel", "Ultima execucao"],
+      ["Relatório", "Cadência", "Responsável", "Última execução"],
       ...reports.map((item) => [item.title, item.cadence, item.owner, item.lastRun]),
     ]);
   }
@@ -1819,7 +1830,7 @@ function ReportsModule({ section }: { section: DashboardSection }) {
             <FormField label="Titulo">
               <TextInput value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Ex.: Giro por linha e especie" />
             </FormField>
-            <FormField label="Responsavel">
+            <FormField label="Responsável">
               <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Controladoria industrial" />
             </FormField>
             <FormField label="Cadencia">
@@ -1858,7 +1869,7 @@ function ReportsModule({ section }: { section: DashboardSection }) {
               </div>
             </div>
             <div className="mt-5 grid gap-3 text-sm text-[var(--muted-foreground)] sm:grid-cols-2">
-              <p>Responsavel: {item.owner}</p>
+              <p>Responsável: {item.owner}</p>
               <p>Ultima execucao: {item.lastRun}</p>
             </div>
           </article>
@@ -2017,11 +2028,11 @@ function DistributorsModule({ section }: { section: DashboardSection }) {
   const [editingName, setEditingName] = useState<string | null>(null);
   const [error, setError] = useState("");
   const priorityOptions = useMemo(
-    () => Array.from(new Set(DISTRIBUTORS.map((item) => item.priority))) as DistributorItem["priority"][],
+    () => [...PRIORITY_OPTIONS] as DistributorItem["priority"][],
     [],
   );
   const statusOptions = useMemo(
-    () => Array.from(new Set(DISTRIBUTORS.map((item) => item.status))) as DistributorItem["status"][],
+    () => [...DISTRIBUTOR_STATUS_OPTIONS] as DistributorItem["status"][],
     [],
   );
   const attentionStatus = useMemo(
@@ -2032,9 +2043,9 @@ function DistributorsModule({ section }: { section: DashboardSection }) {
     name: "",
     region: "",
     channel: "",
-    priority: DISTRIBUTORS[0]?.priority ?? ("Alta" as DistributorItem["priority"]),
+    priority: priorityOptions[0],
     lastSupply: "",
-    status: DISTRIBUTORS[0]?.status ?? ("Ativo" as DistributorItem["status"]),
+    status: statusOptions[0],
   });
 
   function resetForm() {
@@ -2042,9 +2053,9 @@ function DistributorsModule({ section }: { section: DashboardSection }) {
       name: "",
       region: "",
       channel: "",
-      priority: DISTRIBUTORS[0]?.priority ?? priorityOptions[0],
+      priority: priorityOptions[0],
       lastSupply: "",
-      status: DISTRIBUTORS[0]?.status ?? statusOptions[0],
+      status: statusOptions[0],
     });
     setEditingName(null);
     setError("");
@@ -2118,7 +2129,7 @@ function DistributorsModule({ section }: { section: DashboardSection }) {
       {isFormOpen ? (
         <InlineFormPanel
           title={editingName ? "Editar distribuidor" : "Novo distribuidor"}
-          description="Cadastre parceiros de distribuicao e acompanhe criticidade, canal e ultima reposicao."
+          description="Cadastre parceiros de distribuição e acompanhe criticidade, canal e última reposição."
           error={error}
           submitLabel={editingName ? "Salvar alteracoes" : "Salvar distribuidor"}
           onSubmit={handleSave}
@@ -2194,14 +2205,14 @@ function CalendarModule({ section }: { section: DashboardSection }) {
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [error, setError] = useState("");
   const typeOptions = useMemo(
-    () => Array.from(new Set(CALENDAR_EVENTS.map((item) => item.type))) as CalendarItem["type"][],
+    () => [...CALENDAR_TYPE_OPTIONS] as CalendarItem["type"][],
     [],
   );
   const [form, setForm] = useState({
     title: "",
     slot: "",
     area: "",
-    type: CALENDAR_EVENTS[0]?.type ?? ("Expedi\u00e7\u00e3o" as CalendarItem["type"]),
+    type: typeOptions[0],
   });
 
   function resetForm() {
@@ -2209,7 +2220,7 @@ function CalendarModule({ section }: { section: DashboardSection }) {
       title: "",
       slot: "",
       area: "",
-      type: CALENDAR_EVENTS[0]?.type ?? typeOptions[0],
+      type: typeOptions[0],
     });
     setEditingTitle(null);
     setError("");
@@ -2287,7 +2298,7 @@ function CalendarModule({ section }: { section: DashboardSection }) {
               <TextInput value={form.slot} onChange={(event) => setForm((current) => ({ ...current, slot: event.target.value }))} placeholder="Ex.: Hoje, 18:00" />
             </FormField>
             <FormField label="Area">
-              <TextInput value={form.area} onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))} placeholder="Ex.: Expedicao Dourado" />
+              <TextInput value={form.area} onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))} placeholder="Ex.: Expedição Dourado" />
             </FormField>
             <FormField label="Tipo">
               <SelectInput value={form.type} onChange={(event) => setForm((current) => ({ ...current, type: event.target.value as CalendarItem["type"] }))}>
