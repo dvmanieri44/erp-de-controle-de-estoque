@@ -1,10 +1,48 @@
 import {
+  buildLocationStockBalanceMap,
+  fetchLocationStockBalances,
   findMatchingProductReference,
+  loadMovements,
   normalizeReferenceText,
+  refreshLocationStockBalances,
+  refreshMovements,
   type LocationStockBalanceMap,
   type MovementItem,
+  type VersionedMovementItem,
 } from "@/lib/inventory";
 import type { LotItem, ProductLineItem } from "@/lib/operations-data";
+
+type ProductLotIdentityMessages = {
+  productIdRequired: string;
+  lotCodeRequired: string;
+  lotProductMismatch: string;
+};
+
+type ResolveProductLotIdentityInput = {
+  productCatalog: readonly ProductLineItem[];
+  lotCatalog: readonly LotItem[];
+  product: string;
+  productId?: string;
+  lotCode?: string;
+  currentProduct?: string;
+  currentProductId?: string;
+  currentLotCode?: string;
+  messages: ProductLotIdentityMessages;
+};
+
+export type LocationStockBalanceResolution = {
+  balances: LocationStockBalanceMap;
+  isUsingFallback: boolean;
+};
+
+type ValidationLocationStockBalanceResolution = LocationStockBalanceResolution & {
+  validationBalances: LocationStockBalanceMap;
+};
+
+type MovementsWithStockResolution = {
+  movements: VersionedMovementItem[];
+  stock: LocationStockBalanceResolution;
+};
 
 export function buildProductOptionValue(product: Pick<ProductLineItem, "product" | "sku">) {
   return `${product.product} (${product.sku})`;
@@ -84,6 +122,150 @@ export function isLotCompatibleWithProduct(
   }
 
   return normalizeReferenceText(lot.product) === normalizeReferenceText(product.product);
+}
+
+export function resolveProductLotIdentity({
+  productCatalog,
+  lotCatalog,
+  product,
+  productId,
+  lotCode,
+  currentProduct,
+  currentProductId,
+  currentLotCode,
+  messages,
+}: ResolveProductLotIdentityInput) {
+  const matchedProduct =
+    (productId
+      ? productCatalog.find(
+          (catalogProduct) =>
+            normalizeReferenceText(catalogProduct.sku) === normalizeReferenceText(productId),
+        ) ?? null
+      : null) ?? resolveProductSelection(productCatalog, product);
+  const matchedLot = resolveLotSelection(lotCatalog, lotCode ?? "");
+  const shouldPreserveCurrentProductId =
+    !matchedProduct &&
+    !!currentProductId &&
+    normalizeReferenceText(product) === normalizeReferenceText(currentProduct ?? "");
+  const shouldPreserveCurrentLotCode =
+    !matchedLot &&
+    !!currentLotCode &&
+    normalizeReferenceText(lotCode ?? "") === normalizeReferenceText(currentLotCode);
+  const resolvedProductId = matchedProduct?.sku ?? (shouldPreserveCurrentProductId ? currentProductId : undefined);
+  const resolvedLotCode = matchedLot?.code ?? (shouldPreserveCurrentLotCode ? currentLotCode : undefined);
+  const errors: Partial<Record<"product" | "lotCode", string>> = {};
+
+  if (matchedProduct && !resolvedProductId) {
+    errors.product = messages.productIdRequired;
+  }
+
+  if (matchedLot && !resolvedLotCode) {
+    errors.lotCode = messages.lotCodeRequired;
+  }
+
+  if (matchedLot && matchedProduct && !isLotCompatibleWithProduct(matchedLot, matchedProduct, productCatalog)) {
+    errors.lotCode = messages.lotProductMismatch;
+  }
+
+  return {
+    matchedProduct,
+    matchedLot,
+    productId: resolvedProductId,
+    lotCode: resolvedLotCode,
+    errors,
+  };
+}
+
+export function getInventoryErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+export async function fetchLocationStockBalancesWithFallback(
+  movements: readonly MovementItem[],
+): Promise<LocationStockBalanceResolution> {
+  try {
+    return {
+      balances: buildLocationStockBalanceMap(await fetchLocationStockBalances()),
+      isUsingFallback: false,
+    };
+  } catch {
+    return {
+      balances: buildLocalLocationStockBalanceMap(movements),
+      isUsingFallback: true,
+    };
+  }
+}
+
+export async function refreshLocationStockBalancesWithFallback(
+  movements: readonly MovementItem[],
+): Promise<LocationStockBalanceResolution> {
+  try {
+    return {
+      balances: buildLocationStockBalanceMap(await refreshLocationStockBalances()),
+      isUsingFallback: false,
+    };
+  } catch {
+    return {
+      balances: buildLocalLocationStockBalanceMap(movements),
+      isUsingFallback: true,
+    };
+  }
+}
+
+export async function loadMovementsWithStockRefresh(): Promise<MovementsWithStockResolution> {
+  const movements = loadMovements();
+
+  return {
+    movements,
+    stock: await refreshLocationStockBalancesWithFallback(movements),
+  };
+}
+
+export async function reloadMovementsWithStockAfterConflict(): Promise<MovementsWithStockResolution> {
+  let movements = loadMovements();
+
+  try {
+    movements = await refreshMovements();
+  } catch {
+    movements = loadMovements();
+  }
+
+  return {
+    movements,
+    stock: await refreshLocationStockBalancesWithFallback(movements),
+  };
+}
+
+export async function resolveValidationLocationStockBalances({
+  movements,
+  currentMovement,
+  editingId,
+}: {
+  movements: readonly MovementItem[];
+  currentMovement: MovementItem | null;
+  editingId: string | null;
+}): Promise<ValidationLocationStockBalanceResolution> {
+  try {
+    const balances = buildLocationStockBalanceMap(
+      await fetchLocationStockBalances(),
+    );
+
+    return {
+      balances,
+      validationBalances: revertMovementFromLocationStockBalances(balances, currentMovement),
+      isUsingFallback: false,
+    };
+  } catch {
+    const fallbackMovements = editingId
+      ? movements.filter((movement) => movement.id !== editingId)
+      : movements;
+
+    return {
+      balances: buildLocalLocationStockBalanceMap(movements),
+      validationBalances: buildLocalLocationStockBalanceMap(fallbackMovements),
+      isUsingFallback: true,
+    };
+  }
 }
 
 function applyLocationStockDelta(
