@@ -13,7 +13,8 @@ import {
   SummaryCard,
   TextInput,
 } from "@/components/dashboard/operations/ui";
-import { useOperationsCollection } from "@/components/dashboard/operations/useOperationsCollection";
+import { useErpResourceCollection } from "@/components/dashboard/operations/useErpResourceCollection";
+import { confirmAction } from "@/lib/client-feedback";
 import type { DashboardSection } from "@/lib/dashboard-sections";
 import { normalizeText } from "@/lib/inventory";
 import {
@@ -64,7 +65,10 @@ export function IncidentsModule({ section }: { section: DashboardSection }) {
   const { canDelete, canUpdate } = useErpPermissions();
   const canDeleteIncidents = canDelete("operations.incidents");
   const canUpdateIncidents = canUpdate("operations.incidents");
-  const [incidents, setIncidents] = useOperationsCollection(loadIncidents);
+  const [incidents, setIncidents] = useErpResourceCollection(
+    "operations.incidents",
+    loadIncidents,
+  );
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingIncident, setEditingIncident] = useState<VersionedIncidentItem | null>(null);
   const [error, setError] = useState("");
@@ -141,7 +145,7 @@ export function IncidentsModule({ section }: { section: DashboardSection }) {
       return;
     }
 
-    if (!window.confirm(`Excluir o incidente "${item.title}"?`)) return;
+    if (!confirmAction(`Excluir o incidente "${item.title}"?`)) return;
 
     const incidentId = item.id;
     const baseVersion = item.version;

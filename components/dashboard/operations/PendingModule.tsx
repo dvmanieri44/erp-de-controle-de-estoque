@@ -13,7 +13,8 @@ import {
   SummaryCard,
   TextInput,
 } from "@/components/dashboard/operations/ui";
-import { useOperationsCollection } from "@/components/dashboard/operations/useOperationsCollection";
+import { useErpResourceCollection } from "@/components/dashboard/operations/useErpResourceCollection";
+import { confirmAction } from "@/lib/client-feedback";
 import type { DashboardSection } from "@/lib/dashboard-sections";
 import { normalizeText } from "@/lib/inventory";
 import {
@@ -62,7 +63,10 @@ function toneByLabel(label: string) {
 export function PendingModule({ section }: { section: DashboardSection }) {
   const { canDelete } = useErpPermissions();
   const canDeletePending = canDelete("operations.pending");
-  const [items, setItems] = useOperationsCollection(loadPendingItems);
+  const [items, setItems] = useErpResourceCollection(
+    "operations.pending",
+    loadPendingItems,
+  );
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<VersionedPendingItem | null>(null);
   const [error, setError] = useState("");
@@ -122,7 +126,7 @@ export function PendingModule({ section }: { section: DashboardSection }) {
       return;
     }
 
-    if (!window.confirm(`Excluir a pendencia "${item.title}"?`)) return;
+    if (!confirmAction(`Excluir a pendencia "${item.title}"?`)) return;
 
     const pendingId = item.id;
     const baseVersion = item.version;

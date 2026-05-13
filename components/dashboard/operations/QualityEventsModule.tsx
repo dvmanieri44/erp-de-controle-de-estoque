@@ -13,7 +13,8 @@ import {
   SummaryCard,
   TextInput,
 } from "@/components/dashboard/operations/ui";
-import { useOperationsCollection } from "@/components/dashboard/operations/useOperationsCollection";
+import { useErpResourceCollection } from "@/components/dashboard/operations/useErpResourceCollection";
+import { confirmAction } from "@/lib/client-feedback";
 import type { DashboardSection } from "@/lib/dashboard-sections";
 import {
   QUALITY_EVENT_STATUS_OPTIONS,
@@ -60,7 +61,10 @@ function toneByLabel(label: string) {
 export function QualityEventsModule({ section }: { section: DashboardSection }) {
   const { canDelete } = useErpPermissions();
   const canDeleteQualityEvents = canDelete("operations.quality-events");
-  const [events, setEvents] = useOperationsCollection(loadQualityEvents);
+  const [events, setEvents] = useErpResourceCollection(
+    "operations.quality-events",
+    loadQualityEvents,
+  );
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<VersionedQualityEventItem | null>(null);
   const [error, setError] = useState("");
@@ -129,7 +133,7 @@ export function QualityEventsModule({ section }: { section: DashboardSection }) 
       return;
     }
 
-    if (!window.confirm(`Excluir o evento de qualidade "${item.title}"?`)) {
+    if (!confirmAction(`Excluir o evento de qualidade "${item.title}"?`)) {
       return;
     }
 
