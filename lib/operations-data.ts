@@ -23,6 +23,7 @@ export type LotItem = {
 };
 
 export type SupplierItem = {
+  id?: string;
   name: string;
   category: string;
   city: string;
@@ -32,6 +33,7 @@ export type SupplierItem = {
 };
 
 export type CategoryItem = {
+  id?: string;
   name: string;
   portfolio: string;
   skus: number;
@@ -49,6 +51,7 @@ export type QualityEventItem = {
 };
 
 export type PlanningItem = {
+  id?: string;
   route: string;
   window: string;
   priority: "Alta" | "Média" | "Baixa";
@@ -57,6 +60,7 @@ export type PlanningItem = {
 };
 
 export type ReportItem = {
+  id?: string;
   title: string;
   owner: string;
   cadence: string;
@@ -65,6 +69,7 @@ export type ReportItem = {
 };
 
 export type NotificationItem = {
+  id?: string;
   title: string;
   area: string;
   priority: "Alta" | "Média" | "Baixa";
@@ -92,6 +97,7 @@ export type TaskItem = {
 };
 
 export type DistributorItem = {
+  id?: string;
   name: string;
   region: string;
   channel: string;
@@ -119,6 +125,7 @@ export type DocumentItem = {
 };
 
 export type CalendarItem = {
+  id?: string;
   title: string;
   slot: string;
   area: string;

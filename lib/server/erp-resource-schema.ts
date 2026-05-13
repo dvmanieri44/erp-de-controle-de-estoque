@@ -410,6 +410,7 @@ export const ERP_RESOURCE_SCHEMAS = {
     maxItems: 4_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         name: stringField({ maxLength: 160 }),
         category: stringField({ maxLength: 120 }),
         city: stringField({ maxLength: 120 }),
@@ -419,12 +420,13 @@ export const ERP_RESOURCE_SCHEMAS = {
       },
     },
     identityLabel: "name",
-    getIdentity: (item) => item.name,
+    getIdentity: (item) => item.id ?? item.name,
   }),
   "operations.categories": createResourceSchema({
     maxItems: 2_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         name: stringField({ maxLength: 140 }),
         portfolio: stringField({ maxLength: 140 }),
         skus: numberField({ max: 10_000 }),
@@ -433,12 +435,13 @@ export const ERP_RESOURCE_SCHEMAS = {
       },
     },
     identityLabel: "name",
-    getIdentity: (item) => item.name,
+    getIdentity: (item) => item.id ?? item.name,
   }),
   "operations.notifications": createResourceSchema({
     maxItems: 10_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         title: stringField({ maxLength: 240 }),
         area: stringField({ maxLength: 120 }),
         priority: enumField(PRIORITY),
@@ -446,8 +449,8 @@ export const ERP_RESOURCE_SCHEMAS = {
         status: enumField(NOTIFICATION_STATUS),
       },
     },
-    identityLabel: "title",
-    getIdentity: (item) => `${item.title}::${item.area}`,
+    identityLabel: "title/area",
+    getIdentity: (item) => item.id ?? `${item.title}::${item.area}`,
   }),
   "operations.quality-events": createResourceSchema({
     maxItems: 10_000,
@@ -468,6 +471,7 @@ export const ERP_RESOURCE_SCHEMAS = {
     maxItems: 10_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         route: stringField({ maxLength: 200 }),
         window: stringField({ maxLength: 80 }),
         priority: enumField(PRIORITY),
@@ -476,12 +480,13 @@ export const ERP_RESOURCE_SCHEMAS = {
       },
     },
     identityLabel: "route/window",
-    getIdentity: (item) => `${item.route}::${item.window}`,
+    getIdentity: (item) => item.id ?? `${item.route}::${item.window}`,
   }),
   "operations.reports": createResourceSchema({
     maxItems: 2_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         title: stringField({ maxLength: 180 }),
         owner: stringField({ maxLength: 120 }),
         cadence: stringField({ maxLength: 80 }),
@@ -490,7 +495,7 @@ export const ERP_RESOURCE_SCHEMAS = {
       },
     },
     identityLabel: "title",
-    getIdentity: (item) => item.title,
+    getIdentity: (item) => item.id ?? item.title,
   }),
   "operations.pending": createResourceSchema({
     maxItems: 10_000,
@@ -527,6 +532,7 @@ export const ERP_RESOURCE_SCHEMAS = {
     maxItems: 5_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         name: stringField({ maxLength: 160 }),
         region: stringField({ maxLength: 120 }),
         channel: stringField({ maxLength: 120 }),
@@ -536,7 +542,7 @@ export const ERP_RESOURCE_SCHEMAS = {
       },
     },
     identityLabel: "name",
-    getIdentity: (item) => item.name,
+    getIdentity: (item) => item.id ?? item.name,
   }),
   "operations.incidents": createResourceSchema({
     maxItems: 10_000,
@@ -572,6 +578,7 @@ export const ERP_RESOURCE_SCHEMAS = {
     maxItems: 10_000,
     itemSchema: {
       fields: {
+        id: stringField({ optional: true, maxLength: 120 }),
         title: stringField({ maxLength: 240 }),
         slot: stringField({ maxLength: 80 }),
         area: stringField({ maxLength: 120 }),
@@ -579,7 +586,7 @@ export const ERP_RESOURCE_SCHEMAS = {
       },
     },
     identityLabel: "title/slot",
-    getIdentity: (item) => `${item.title}::${item.slot}`,
+    getIdentity: (item) => item.id ?? `${item.title}::${item.slot}`,
   }),
   "user.accounts": createResourceSchema({
     maxItems: 500,
