@@ -7,7 +7,6 @@ import { useLocale } from "@/components/providers/LocaleProvider";
 import { ERP_DATA_EVENT } from "@/lib/app-events";
 import { formatMessage } from "@/lib/i18n";
 import {
-  INITIAL_LOCATIONS,
   buildLocationStockBalanceMap,
   createLocation,
   createLocationId,
@@ -352,7 +351,7 @@ function LocationCard({
   available: number;
   locale: keyof typeof COPY;
   copy: (typeof COPY)[keyof typeof COPY];
-  onEdit: () => void;
+  onEdit?: () => void;
   onDelete?: () => void;
 }) {
   return (
@@ -372,12 +371,14 @@ function LocationCard({
         </div>
 
         <div className="flex items-center gap-1">
-          <ActionButton onClick={onEdit} label={formatMessage(copy.editLocationAria, { name: location.name })}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-              <path d="M4 20h4l10-10-4-4L4 16v4Z" />
-              <path d="m12.5 7.5 4 4" />
-            </svg>
-          </ActionButton>
+          {onEdit ? (
+            <ActionButton onClick={onEdit} label={formatMessage(copy.editLocationAria, { name: location.name })}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                <path d="M4 20h4l10-10-4-4L4 16v4Z" />
+                <path d="m12.5 7.5 4 4" />
+              </svg>
+            </ActionButton>
+          ) : null}
           {onDelete ? (
             <ActionButton onClick={onDelete} tone="danger" label={formatMessage(copy.deleteLocationAria, { name: location.name })}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
@@ -447,7 +448,9 @@ function Toast({ toast }: { toast: NonNullable<ToastState> }) {
 }
 
 export function LocationsScreen() {
-  const { canDelete } = useErpPermissions();
+  const { canCreate, canDelete, canUpdate } = useErpPermissions();
+  const canCreateLocations = canCreate("inventory.locations");
+  const canUpdateLocations = canUpdate("inventory.locations");
   const canDeleteLocations = canDelete("inventory.locations");
   const { locale } = useLocale();
   const copy = COPY[locale];
@@ -460,7 +463,7 @@ export function LocationsScreen() {
       })[locale],
     [locale],
   );
-  const [locations, setLocations] = useState<VersionedLocationItem[]>(INITIAL_LOCATIONS);
+  const [locations, setLocations] = useState<VersionedLocationItem[]>([]);
   const [movements, setMovements] = useState<MovementItem[]>([]);
   const [locationStockBalances, setLocationStockBalances] = useState<LocationStockBalanceMap>(() => new Map());
   const [stockBalanceError, setStockBalanceError] = useState<string | null>(null);
@@ -647,6 +650,15 @@ export function LocationsScreen() {
   const isEditing = editingId !== null;
 
   function openCreateModal() {
+    if (!canCreateLocations) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode criar localizacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
     setEditingId(null);
     setForm(EMPTY_FORM);
     setErrors({});
@@ -654,6 +666,15 @@ export function LocationsScreen() {
   }
 
   function openEditModal(location: LocationItem) {
+    if (!canUpdateLocations) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode editar localizacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
     setEditingId(location.id);
     setForm({
       name: location.name,
@@ -732,6 +753,24 @@ export function LocationsScreen() {
   }
 
   async function handleSubmit() {
+    if (isEditing && !canUpdateLocations) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode editar localizacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (!isEditing && !canCreateLocations) {
+      setToast({
+        id: Date.now(),
+        message: "Seu perfil nao pode criar localizacoes.",
+        tone: "error",
+      });
+      return;
+    }
+
     const nextErrors = validateForm(form);
     setErrors(nextErrors);
 
@@ -941,7 +980,10 @@ export function LocationsScreen() {
         <button
           type="button"
           onClick={openCreateModal}
-          className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+          disabled={!canCreateLocations}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 ${
+            canCreateLocations ? "bg-[var(--accent)] hover:opacity-95" : "cursor-not-allowed bg-slate-300 shadow-none"
+          }`}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
             <path d="M12 5v14M5 12h14" />
@@ -1000,7 +1042,7 @@ export function LocationsScreen() {
             available={getPreferredLocationAvailableCapacity(location, movements, locationStockBalances)}
             locale={locale}
             copy={copy}
-            onEdit={() => openEditModal(location)}
+            onEdit={canUpdateLocations ? () => openEditModal(location) : undefined}
             onDelete={canDeleteLocations ? () => confirmDelete(location) : undefined}
           />
         ))}

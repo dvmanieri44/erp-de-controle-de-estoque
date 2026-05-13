@@ -22,9 +22,13 @@ import { ErpResourceValidationError } from "@/lib/server/erp-resource-schema";
 import { writeErpResource } from "@/lib/server/erp-state";
 import {
   resetFirebaseAdminTestOverrides,
-  setFirebaseAdminDbForTests,
+  setFirebaseAdminDbForTests as setFirebaseAdminDbForTestsBase,
 } from "@/lib/server/firebase-admin";
-import { PRODUCT_LINES } from "@/lib/operations-data";
+import {
+  PRODUCT_SPECIES_OPTIONS,
+  PRODUCT_STATUS_OPTIONS,
+  type ProductLineItem,
+} from "@/lib/operations-data";
 import type { UserAccount } from "@/lib/user-accounts";
 
 import { FakeFirestoreAdminDb } from "./helpers/fake-firestore";
@@ -54,9 +58,20 @@ const SAMPLE_MOVEMENT = {
   status: "concluida" as const,
 };
 
-const SAMPLE_CANONICAL_PRODUCT =
-  PRODUCT_LINES.find((product) => product.sku === SAMPLE_MOVEMENT.productId)
-    ?.product ?? SAMPLE_MOVEMENT.product;
+const SAMPLE_PRODUCT: ProductLineItem = {
+  sku: SAMPLE_MOVEMENT.productId,
+  product: SAMPLE_MOVEMENT.product,
+  line: "Linha de teste",
+  species: PRODUCT_SPECIES_OPTIONS[0]!,
+  stage: "Adulto",
+  package: "2,5 kg",
+  stock: 0,
+  target: 0,
+  coverageDays: 0,
+  status: PRODUCT_STATUS_OPTIONS[0]!,
+};
+
+const SAMPLE_CANONICAL_PRODUCT = SAMPLE_PRODUCT.product;
 const SAMPLE_COMPATIBLE_LOT_WITH_PRODUCT_ID = {
   code: "LOT-COMPATIVEL-PRODUCT-ID",
   product: SAMPLE_CANONICAL_PRODUCT,
@@ -114,6 +129,15 @@ function restoreProcessEnv() {
 
 async function seedLotsResource(lots: unknown[]) {
   await writeErpResource("operations.lots", lots, { baseVersion: 0 });
+}
+
+function setFirebaseAdminDbForTests(firestore: FakeFirestoreAdminDb) {
+  setFirebaseAdminDbForTestsBase(firestore);
+  firestore.seed("operationsProducts", SAMPLE_PRODUCT.sku, {
+    ...SAMPLE_PRODUCT,
+    version: 1,
+    updatedAt: "2026-04-24T12:00:00.000Z",
+  });
 }
 
 describe("inventory movements item store", () => {
@@ -319,11 +343,7 @@ describe("inventory movements item store", () => {
     setFirebaseAdminDbForTests(firestore);
     await writeErpResource(
       "operations.products",
-      [
-        PRODUCT_LINES.find(
-          (product) => product.sku === SAMPLE_MOVEMENT.productId,
-        ),
-      ],
+      [SAMPLE_PRODUCT],
       { baseVersion: 0 },
     );
     firestore.seed("operationsProducts", SAMPLE_MOVEMENT.productId, {

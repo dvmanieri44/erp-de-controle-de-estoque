@@ -12,11 +12,12 @@ import {
   SummaryCard,
   TextInput,
 } from "@/components/dashboard/operations/ui";
-import { useOperationsCollection } from "@/components/dashboard/operations/useOperationsCollection";
+import { useErpResourceCollection } from "@/components/dashboard/operations/useErpResourceCollection";
+import { confirmAction } from "@/lib/client-feedback";
 import type { DashboardSection } from "@/lib/dashboard-sections";
 import { normalizeText } from "@/lib/inventory";
 import {
-  TASKS,
+  TASK_STATUS_OPTIONS,
   type TaskItem,
 } from "@/lib/operations-data";
 import {
@@ -58,12 +59,15 @@ function toneByLabel(label: string) {
 export function TasksModule({ section }: { section: DashboardSection }) {
   const { canDelete } = useErpPermissions();
   const canDeleteTasks = canDelete("operations.tasks");
-  const [tasks, setTasks] = useOperationsCollection(loadTasks);
+  const [tasks, setTasks] = useErpResourceCollection(
+    "operations.tasks",
+    loadTasks,
+  );
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<VersionedTaskItem | null>(null);
   const [error, setError] = useState("");
   const taskMutation = useErpMutation();
-  const statusOptions = useMemo(() => Array.from(new Set(TASKS.map((item) => item.status))) as TaskItem["status"][], []);
+  const statusOptions = useMemo(() => [...TASK_STATUS_OPTIONS] as TaskItem["status"][], []);
   const waitingStatus = useMemo(() => statusOptions.find((item) => normalizeText(item).includes("aguard")) ?? statusOptions[0], [statusOptions]);
   const runningStatus = useMemo(() => statusOptions.find((item) => normalizeText(item).includes("execu")) ?? statusOptions[0], [statusOptions]);
   const doneStatus = useMemo(() => statusOptions.find((item) => normalizeText(item).includes("conclu")) ?? statusOptions[0], [statusOptions]);
@@ -73,7 +77,7 @@ export function TasksModule({ section }: { section: DashboardSection }) {
     owner: "",
     checklist: "",
     completed: "",
-    status: TASKS[0]?.status ?? statusOptions[0],
+    status: statusOptions[0] as TaskItem["status"],
   });
 
   function resolveTaskStatus(completed: number, checklist: number): TaskItem["status"] {
@@ -89,7 +93,7 @@ export function TasksModule({ section }: { section: DashboardSection }) {
       owner: "",
       checklist: "",
       completed: "",
-      status: TASKS[0]?.status ?? statusOptions[0],
+      status: statusOptions[0] as TaskItem["status"],
     });
     setEditingTask(null);
     setError("");
@@ -136,7 +140,7 @@ export function TasksModule({ section }: { section: DashboardSection }) {
       return;
     }
 
-    if (!window.confirm(`Excluir a tarefa "${item.title}"?`)) return;
+    if (!confirmAction(`Excluir a tarefa "${item.title}"?`)) return;
 
     const taskId = item.id;
     const baseVersion = item.version;
@@ -293,7 +297,7 @@ export function TasksModule({ section }: { section: DashboardSection }) {
 
   return (
     <section className="space-y-8">
-      <Hero section={section} eyebrow="Execucao" actions={<ActionButton tone="primary" onClick={() => setIsFormOpen(true)}>Nova tarefa</ActionButton>} />
+      <Hero section={section} eyebrow="Execução" actions={<ActionButton tone="primary" onClick={() => setIsFormOpen(true)}>Nova tarefa</ActionButton>} />
 
       {isFormOpen ? (
         <InlineFormPanel
@@ -311,7 +315,7 @@ export function TasksModule({ section }: { section: DashboardSection }) {
             <FormField label="Turno">
               <TextInput value={form.shift} onChange={(event) => setForm((current) => ({ ...current, shift: event.target.value }))} placeholder="Ex.: Turno A" />
             </FormField>
-            <FormField label="Responsavel">
+            <FormField label="Responsável">
               <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Diego Paiva" />
             </FormField>
             <FormField label="Checklist">
@@ -343,11 +347,11 @@ export function TasksModule({ section }: { section: DashboardSection }) {
                       <p className="font-semibold text-[var(--foreground)]">{item.title}</p>
                       <StatusPill label={item.status} tone={toneByLabel(item.status)} />
                     </div>
-                    <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.shift} Â· Responsavel: {item.owner}</p>
+                    <p className="mt-1 text-sm text-[var(--muted-foreground)]">{item.shift} · Responsável: {item.owner}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-medium text-[var(--navy-900)]">{item.completed}/{item.checklist} etapas</p>
-                    <button type="button" onClick={() => void handleAdvance(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Avancar</button>
+                    <button type="button" onClick={() => void handleAdvance(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Avançar</button>
                     <button type="button" onClick={() => handleEdit(item)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
                     {canDeleteTasks ? (
                       <button type="button" onClick={() => void handleDelete(item)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Excluir</button>

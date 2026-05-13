@@ -15,7 +15,7 @@ import {
   TaskNotFoundError,
   updateTask,
 } from "@/lib/server/tasks";
-import { TASKS } from "@/lib/operations-data";
+import { TASK_STATUS_OPTIONS } from "@/lib/operations-data";
 
 import { FakeFirestoreAdminDb } from "./helpers/fake-firestore";
 
@@ -27,7 +27,7 @@ const SAMPLE_TASK = {
   owner: "Diego Paiva",
   checklist: 8,
   completed: 3,
-  status: TASKS[0]!.status,
+  status: TASK_STATUS_OPTIONS[1],
 };
 
 const SAMPLE_SECOND_TASK = {
@@ -36,7 +36,7 @@ const SAMPLE_SECOND_TASK = {
   owner: "Fernanda Rocha",
   checklist: 6,
   completed: 6,
-  status: TASKS[1]!.status,
+  status: TASK_STATUS_OPTIONS[2],
 };
 
 function restoreProcessEnv() {
@@ -111,7 +111,7 @@ describe("tasks item store", () => {
       legacyTask.id,
       {
         completed: 8,
-        status: TASKS[1]!.status,
+        status: TASK_STATUS_OPTIONS[2],
       },
       {
         baseVersion: 1,
@@ -122,7 +122,7 @@ describe("tasks item store", () => {
 
     assert.equal(updated.version, 2);
     assert.equal(updated.completed, 8);
-    assert.equal(updated.status, TASKS[1]!.status);
+    assert.equal(updated.status, TASK_STATUS_OPTIONS[2]);
     assert.equal(loaded.version, 2);
     assert.equal(firestore.read("tasks", legacyTask.id)?.completed, 8);
     assert.equal(payload.count, 2);

@@ -77,118 +77,6 @@ const DOCUMENTS_STORAGE_KEY = "erp.operations.documents";
 const CALENDAR_EVENTS_STORAGE_KEY = "erp.operations.calendar";
 const USER_ACCOUNTS_STORAGE_KEY = "erp.user-accounts";
 
-const INITIAL_LOCATIONS: LocationItem[] = [
-  {
-    id: "complexo-industrial-dourado",
-    name: "Complexo Industrial Dourado",
-    type: "Fábrica",
-    address: "Dourado - SP",
-    manager: "Marina Azevedo",
-    capacityTotal: 280000,
-    status: "Ativa",
-  },
-  {
-    id: "cd-sudeste",
-    name: "CD Sudeste",
-    type: "Centro de Distribuição",
-    address: "Jundiaí - SP",
-    manager: "Carlos Menezes",
-    capacityTotal: 180000,
-    status: "Ativa",
-  },
-  {
-    id: "expedicao-dourado",
-    name: "Expedição Dourado",
-    type: "Expedição",
-    address: "Dourado - SP",
-    manager: "Fernanda Rocha",
-    capacityTotal: 52000,
-    status: "Ativa",
-  },
-  {
-    id: "quality-hold",
-    name: "Quality Hold",
-    type: "Qualidade",
-    address: "Dourado - SP",
-    manager: "Luciana Prado",
-    capacityTotal: 24000,
-    status: "Ativa",
-  },
-];
-
-const INITIAL_MOVEMENTS: MovementItem[] = [
-  {
-    id: "mov-seco-premier-porte-mini",
-    product: "PremieR Formula Cães Adultos Porte Mini",
-    type: "entrada",
-    quantity: 36000,
-    reason: "Produção liberada pela qualidade",
-    user: "Ana Ribeiro",
-    createdAt: "2026-03-27T09:20:00.000Z",
-    locationId: "complexo-industrial-dourado",
-    notes: "Lote PFM260327 liberado após análise físico-química.",
-    status: "concluida",
-  },
-  {
-    id: "mov-golden-gatos-castrados",
-    product: "GoldeN Gatos Castrados Salmão",
-    type: "entrada",
-    quantity: 22000,
-    reason: "Produção concluída",
-    user: "Rafael Monteiro",
-    createdAt: "2026-03-28T11:40:00.000Z",
-    locationId: "complexo-industrial-dourado",
-    notes: "Lote GGC280326 com embalagem 10,1 kg.",
-    status: "concluida",
-  },
-  {
-    id: "trf-premier-formula-cd",
-    product: "PremieR Formula Cães Adultos Porte Mini",
-    type: "transferencia",
-    quantity: 12000,
-    reason: "Abastecimento do CD Sudeste",
-    user: "Joana Martins",
-    createdAt: "2026-03-29T13:10:00.000Z",
-    fromLocationId: "complexo-industrial-dourado",
-    toLocationId: "cd-sudeste",
-    notes: "Transferência programada para pedidos do canal especializado.",
-    priority: "alta",
-    transferStatus: "recebida",
-    code: "TRF-20260329-131000",
-    receivedAt: "2026-03-30T09:15:00.000Z",
-  },
-  {
-    id: "mov-golden-expedicao",
-    product: "GoldeN Gatos Castrados Salmão",
-    type: "transferencia",
-    quantity: 8000,
-    reason: "Separação para expedição nacional",
-    user: "Diego Paiva",
-    createdAt: "2026-03-30T16:00:00.000Z",
-    fromLocationId: "complexo-industrial-dourado",
-    toLocationId: "expedicao-dourado",
-    notes: "Janela de carregamento da operação Sul e Sudeste.",
-    priority: "media",
-    transferStatus: "em_transito",
-    code: "TRF-20260330-160000",
-  },
-  {
-    id: "mov-quality-hold",
-    product: "PremieR Formula Filhotes Frango",
-    type: "transferencia",
-    quantity: 3500,
-    reason: "Retenção preventiva para reanálise",
-    user: "Tatiane Freitas",
-    createdAt: "2026-03-31T08:05:00.000Z",
-    fromLocationId: "complexo-industrial-dourado",
-    toLocationId: "quality-hold",
-    notes: "Aguardar parecer do laboratório interno.",
-    priority: "alta",
-    transferStatus: "em_separacao",
-    code: "TRF-20260331-080500",
-  },
-];
-
 const INITIAL_USER_ACCOUNTS: UserAccount[] = [
   {
     id: "conta-admin-premierpet",
@@ -233,12 +121,12 @@ export const ERP_RESOURCE_DEFINITIONS: {
 } = {
   "inventory.locations": {
     localStorageKey: LOCATIONS_STORAGE_KEY,
-    defaultValue: [...INITIAL_LOCATIONS],
+    defaultValue: [],
     event: "erp-data",
   },
   "inventory.movements": {
     localStorageKey: MOVEMENTS_STORAGE_KEY,
-    defaultValue: [...INITIAL_MOVEMENTS],
+    defaultValue: [],
     event: "erp-data",
   },
   "operations.products": {

@@ -15,13 +15,6 @@ const AUTH_CREDENTIALS_COLLECTION = "authCredentials";
 const DEFAULT_AUTH_CREDENTIALS_FILE = path.join(process.cwd(), ".data", "auth-credentials.json");
 const PRIMARY_ADMIN_ACCOUNT_ID = "conta-admin-premierpet";
 
-const DEV_BOOTSTRAP_PASSWORDS: Record<string, string> = {
-  admin: "admin123",
-  joao: "123456",
-  maria: "123456",
-  auditoria: "123456",
-};
-
 export const MIN_PASSWORD_LENGTH = 8;
 
 export type StoredAuthCredential = {
@@ -249,33 +242,6 @@ export async function deleteAuthCredential(accountId: string) {
 }
 
 function getBootstrapCredentials(accounts: UserAccount[]) {
-  if (
-    process.env.NODE_ENV !== "production" &&
-    process.env.ALLOW_DEV_BOOTSTRAP_PASSWORDS === "true"
-  ) {
-    return accounts
-      .map((account) => {
-        const password = DEV_BOOTSTRAP_PASSWORDS[account.username];
-
-        return password
-          ? {
-              accountId: account.id,
-              username: account.username,
-              password,
-            }
-          : null;
-      })
-      .filter(
-        (
-          item,
-        ): item is {
-          accountId: string;
-          username: string;
-          password: string;
-        } => item !== null,
-      );
-  }
-
   const adminAccount = accounts.find((account) => account.id === PRIMARY_ADMIN_ACCOUNT_ID) ?? null;
   const bootstrapAdminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD?.trim();
 

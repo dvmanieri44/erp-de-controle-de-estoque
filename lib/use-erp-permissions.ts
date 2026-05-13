@@ -3,15 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { ErpResourceId } from "@/lib/erp-data-resources";
+import { canRoleAccessErpResource } from "@/lib/erp-resource-access";
 import type { UserAccount, UserRole } from "@/lib/user-accounts";
-
-type ResourceAccessPolicy = {
-  read: readonly UserRole[];
-  write: readonly UserRole[];
-  create?: readonly UserRole[];
-  update?: readonly UserRole[];
-  delete?: readonly UserRole[];
-};
 
 type ErpSessionState = {
   authenticated: boolean;
@@ -20,122 +13,6 @@ type ErpSessionState = {
   role: UserRole | null;
   expiresAt: string | null;
   isLoading: boolean;
-};
-
-const ALL_AUTHENTICATED_ROLES = [
-  "administrador",
-  "gestor",
-  "operador",
-  "consulta",
-] as const satisfies readonly UserRole[];
-
-const ADMIN_AND_MANAGER = [
-  "administrador",
-  "gestor",
-] as const satisfies readonly UserRole[];
-
-const OPERATIONAL_WRITERS = [
-  "administrador",
-  "gestor",
-  "operador",
-] as const satisfies readonly UserRole[];
-
-const ERP_CLIENT_RESOURCE_ACCESS: Record<ErpResourceId, ResourceAccessPolicy> = {
-  "inventory.locations": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: ADMIN_AND_MANAGER,
-    create: ADMIN_AND_MANAGER,
-    update: ADMIN_AND_MANAGER,
-    delete: ADMIN_AND_MANAGER,
-  },
-  "inventory.movements": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: OPERATIONAL_WRITERS,
-    create: OPERATIONAL_WRITERS,
-    update: OPERATIONAL_WRITERS,
-    delete: ADMIN_AND_MANAGER,
-  },
-  "operations.products": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: ADMIN_AND_MANAGER,
-    create: ADMIN_AND_MANAGER,
-    update: ADMIN_AND_MANAGER,
-    delete: ADMIN_AND_MANAGER,
-  },
-  "operations.lots": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: OPERATIONAL_WRITERS,
-    create: OPERATIONAL_WRITERS,
-    update: OPERATIONAL_WRITERS,
-    delete: ADMIN_AND_MANAGER,
-  },
-  "operations.suppliers": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: ADMIN_AND_MANAGER,
-  },
-  "operations.categories": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: ADMIN_AND_MANAGER,
-  },
-  "operations.notifications": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: OPERATIONAL_WRITERS,
-  },
-  "operations.quality-events": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: OPERATIONAL_WRITERS,
-    create: OPERATIONAL_WRITERS,
-    update: OPERATIONAL_WRITERS,
-    delete: ADMIN_AND_MANAGER,
-  },
-  "operations.planning": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: ADMIN_AND_MANAGER,
-  },
-  "operations.reports": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: ADMIN_AND_MANAGER,
-  },
-  "operations.pending": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: OPERATIONAL_WRITERS,
-    create: OPERATIONAL_WRITERS,
-    update: OPERATIONAL_WRITERS,
-    delete: ADMIN_AND_MANAGER,
-  },
-  "operations.tasks": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: OPERATIONAL_WRITERS,
-    create: OPERATIONAL_WRITERS,
-    update: OPERATIONAL_WRITERS,
-    delete: ADMIN_AND_MANAGER,
-  },
-  "operations.distributors": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: ADMIN_AND_MANAGER,
-  },
-  "operations.incidents": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: OPERATIONAL_WRITERS,
-    create: OPERATIONAL_WRITERS,
-    update: OPERATIONAL_WRITERS,
-    delete: ADMIN_AND_MANAGER,
-  },
-  "operations.documents": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: OPERATIONAL_WRITERS,
-    create: OPERATIONAL_WRITERS,
-    update: OPERATIONAL_WRITERS,
-    delete: ADMIN_AND_MANAGER,
-  },
-  "operations.calendar": {
-    read: ALL_AUTHENTICATED_ROLES,
-    write: OPERATIONAL_WRITERS,
-  },
-  "user.accounts": {
-    read: ADMIN_AND_MANAGER,
-    write: ["administrador"],
-  },
 };
 
 const EMPTY_SESSION: ErpSessionState = {
@@ -147,17 +24,12 @@ const EMPTY_SESSION: ErpSessionState = {
   isLoading: true,
 };
 
-function isRoleAllowed(role: UserRole | null, allowedRoles: readonly UserRole[]) {
-  return role ? allowedRoles.includes(role) : false;
-}
-
 function canUseAction(
   role: UserRole | null,
   resource: ErpResourceId,
-  action: "create" | "update" | "delete",
+  action: "create" | "update" | "delete" | "cancel" | "close" | "backfill",
 ) {
-  const policy = ERP_CLIENT_RESOURCE_ACCESS[resource];
-  return isRoleAllowed(role, policy[action] ?? policy.write);
+  return canRoleAccessErpResource(role, resource, action);
 }
 
 export function canCreate(role: UserRole | null, resource: ErpResourceId) {
@@ -170,6 +42,18 @@ export function canUpdate(role: UserRole | null, resource: ErpResourceId) {
 
 export function canDelete(role: UserRole | null, resource: ErpResourceId) {
   return canUseAction(role, resource, "delete");
+}
+
+export function canCancel(role: UserRole | null, resource: ErpResourceId) {
+  return canUseAction(role, resource, "cancel");
+}
+
+export function canClose(role: UserRole | null, resource: ErpResourceId) {
+  return canUseAction(role, resource, "close");
+}
+
+export function canBackfill(role: UserRole | null, resource: ErpResourceId) {
+  return canUseAction(role, resource, "backfill");
 }
 
 export function useErpSession() {
@@ -226,6 +110,10 @@ export function useErpPermissions() {
       canCreate: (resource: ErpResourceId) => canCreate(session.role, resource),
       canUpdate: (resource: ErpResourceId) => canUpdate(session.role, resource),
       canDelete: (resource: ErpResourceId) => canDelete(session.role, resource),
+      canCancel: (resource: ErpResourceId) => canCancel(session.role, resource),
+      canClose: (resource: ErpResourceId) => canClose(session.role, resource),
+      canBackfill: (resource: ErpResourceId) =>
+        canBackfill(session.role, resource),
     }),
     [session],
   );
