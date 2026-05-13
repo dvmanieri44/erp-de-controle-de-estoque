@@ -12,7 +12,8 @@ import {
   SummaryCard,
   TextInput,
 } from "@/components/dashboard/operations/ui";
-import { useOperationsCollection } from "@/components/dashboard/operations/useOperationsCollection";
+import { useErpResourceCollection } from "@/components/dashboard/operations/useErpResourceCollection";
+import { confirmAction } from "@/lib/client-feedback";
 import type { DashboardSection } from "@/lib/dashboard-sections";
 import { normalizeText } from "@/lib/inventory";
 import {
@@ -58,7 +59,10 @@ function toneByLabel(label: string) {
 export function TasksModule({ section }: { section: DashboardSection }) {
   const { canDelete } = useErpPermissions();
   const canDeleteTasks = canDelete("operations.tasks");
-  const [tasks, setTasks] = useOperationsCollection(loadTasks);
+  const [tasks, setTasks] = useErpResourceCollection(
+    "operations.tasks",
+    loadTasks,
+  );
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<VersionedTaskItem | null>(null);
   const [error, setError] = useState("");
@@ -136,7 +140,7 @@ export function TasksModule({ section }: { section: DashboardSection }) {
       return;
     }
 
-    if (!window.confirm(`Excluir a tarefa "${item.title}"?`)) return;
+    if (!confirmAction(`Excluir a tarefa "${item.title}"?`)) return;
 
     const taskId = item.id;
     const baseVersion = item.version;

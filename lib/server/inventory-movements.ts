@@ -624,6 +624,24 @@ function normalizeCatalogLocationId(value: string) {
   return value.trim();
 }
 
+function warnLegacyCatalogFallback(
+  message: string,
+  metadata: Record<string, string | null | undefined>,
+) {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  const serializedMetadata = Object.entries(metadata)
+    .filter(([, value]) => typeof value === "string" && value.trim().length > 0)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+
+  console.warn(
+    `[inventory-movements] ${message}${serializedMetadata ? ` ${serializedMetadata}` : ""}`,
+  );
+}
+
 function getMovementLotSourceLocationId(movement: MovementItem) {
   if (movement.type === "saida") {
     return movement.locationId ?? null;
@@ -655,6 +673,14 @@ async function resolveLegacyLotLocationIdByName(locationName: string) {
 
 async function assertMovementProductIntegrity(movement: MovementItem) {
   if (!movement.productId) {
+    warnLegacyCatalogFallback(
+      "Movimentacao sem productId; integridade depende do nome do produto.",
+      {
+        movementId: movement.id ?? null,
+        product: movement.product,
+        lotCode: movement.lotCode ?? null,
+      },
+    );
     return movement;
   }
 
@@ -710,11 +736,23 @@ async function assertMovementLotIntegrity(movement: MovementItem) {
     ) {
       throw new InventoryMovementInvalidLotProductError(movement.lotCode);
     }
-  } else if (
-    normalizeCatalogReference(lot.product) !==
-    normalizeCatalogReference(movement.product)
-  ) {
-    throw new InventoryMovementInvalidLotProductError(movement.lotCode);
+  } else {
+    warnLegacyCatalogFallback(
+      "Fallback legado por nome de produto durante validacao de lote.",
+      {
+        movementId: movement.id ?? null,
+        lotCode: movement.lotCode,
+        product: movement.product,
+        lotProduct: lot.product,
+      },
+    );
+
+    if (
+      normalizeCatalogReference(lot.product) !==
+      normalizeCatalogReference(movement.product)
+    ) {
+      throw new InventoryMovementInvalidLotProductError(movement.lotCode);
+    }
   }
 
   const movementSourceLocationId = getMovementLotSourceLocationId(movement);
@@ -735,6 +773,29 @@ async function assertMovementLotIntegrity(movement: MovementItem) {
   }
 
   const fallbackLocationId = await resolveLegacyLotLocationIdByName(lot.location);
+
+  if (fallbackLocationId) {
+    warnLegacyCatalogFallback(
+      "Fallback legado por nome de localizacao durante validacao de lote.",
+      {
+        movementId: movement.id ?? null,
+        lotCode: movement.lotCode,
+        movementLocationId: movementSourceLocationId,
+        lotLocation: lot.location,
+        fallbackLocationId,
+      },
+    );
+  } else if (lot.location.trim()) {
+    warnLegacyCatalogFallback(
+      "Nao foi possivel resolver a localizacao legada por nome durante validacao de lote.",
+      {
+        movementId: movement.id ?? null,
+        lotCode: movement.lotCode,
+        movementLocationId: movementSourceLocationId,
+        lotLocation: lot.location,
+      },
+    );
+  }
 
   if (
     fallbackLocationId &&

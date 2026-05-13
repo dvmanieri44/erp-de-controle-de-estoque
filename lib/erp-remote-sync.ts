@@ -1,4 +1,5 @@
 import { dispatchErpDataEvent, dispatchUserAccountsEvent } from "@/lib/app-events";
+import { confirmAction, showToast } from "@/lib/client-feedback";
 import {
   ERP_RESOURCE_DEFINITIONS,
   type ErpResourceId,
@@ -102,7 +103,7 @@ function notifyPermissionDenied(resource: ErpResourceId) {
 
   reportedPermissionErrors.add(resource);
 
-  window.alert(
+  showToast(
     `Sua conta nao tem permissao para alterar ${getResourceDisplayName(resource)}. Os dados locais serao recarregados do servidor.`,
   );
 }
@@ -114,7 +115,7 @@ function notifyVersionConflict(resource: ErpResourceId) {
 
   reportedVersionConflicts.add(resource);
 
-  const shouldReload = window.confirm(
+  const shouldReload = confirmAction(
     `Os dados de ${getResourceDisplayName(resource)} foram alterados por outra sessao. Deseja recarregar a versao mais recente do servidor agora?`,
   );
 

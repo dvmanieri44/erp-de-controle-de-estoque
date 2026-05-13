@@ -47,3 +47,4 @@ next-env.d.ts
 logs/
 *.tmp
 *.bak
+.codex-worktrees/

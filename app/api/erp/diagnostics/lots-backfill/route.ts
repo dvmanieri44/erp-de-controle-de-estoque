@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 import {
+  assertCanBackfillErpResource,
   ErpAccessDeniedError,
-  assertCanDeleteErpResource,
   assertCanReadErpResource,
 } from "@/lib/server/erp-access-control";
 import {
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     assertCanReadErpResource(session, "inventory.locations");
 
     if (shouldApply) {
-      assertCanDeleteErpResource(session, LOTS_RESOURCE_ID);
+      assertCanBackfillErpResource(session, LOTS_RESOURCE_ID);
     }
 
     const beforeLots = shouldApply ? await listLots() : null;
