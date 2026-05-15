@@ -22,6 +22,13 @@ const INCIDENTS_RESOURCE_ID = "operations.incidents";
 const DOCUMENTS_RESOURCE_ID = "operations.documents";
 const TASKS_RESOURCE_ID = "operations.tasks";
 const PENDING_RESOURCE_ID = "operations.pending";
+const NOTIFICATIONS_RESOURCE_ID = "operations.notifications";
+const PLANNING_RESOURCE_ID = "operations.planning";
+const CALENDAR_RESOURCE_ID = "operations.calendar";
+const REPORTS_RESOURCE_ID = "operations.reports";
+const DISTRIBUTORS_RESOURCE_ID = "operations.distributors";
+const SUPPLIERS_RESOURCE_ID = "operations.suppliers";
+const CATEGORIES_RESOURCE_ID = "operations.categories";
 
 type RouteContext = {
   params: Promise<{
@@ -98,6 +105,48 @@ function getRestrictedPendingWriteResponse() {
   );
 }
 
+function getRestrictedNotificationsWriteResponse() {
+  return getRestrictedResourceResponse(
+    "As notificacoes devem ser alteradas apenas pelas rotas dedicadas /api/erp/notifications e /api/erp/notifications/[notificationId].",
+  );
+}
+
+function getRestrictedPlanningWriteResponse() {
+  return getRestrictedResourceResponse(
+    "Os planejamentos devem ser alterados apenas pelas rotas dedicadas /api/erp/planning e /api/erp/planning/[planningId].",
+  );
+}
+
+function getRestrictedCalendarWriteResponse() {
+  return getRestrictedResourceResponse(
+    "Os eventos do calendario devem ser alterados apenas pelas rotas dedicadas /api/erp/calendar e /api/erp/calendar/[calendarEventId].",
+  );
+}
+
+function getRestrictedReportsWriteResponse() {
+  return getRestrictedResourceResponse(
+    "Os relatorios devem ser alterados apenas pelas rotas dedicadas /api/erp/reports e /api/erp/reports/[reportId].",
+  );
+}
+
+function getRestrictedDistributorsWriteResponse() {
+  return getRestrictedResourceResponse(
+    "Os distribuidores devem ser alterados apenas pelas rotas dedicadas /api/erp/distributors e /api/erp/distributors/[distributorId].",
+  );
+}
+
+function getRestrictedSuppliersWriteResponse() {
+  return getRestrictedResourceResponse(
+    "Os fornecedores devem ser alterados apenas pelas rotas dedicadas /api/erp/suppliers e /api/erp/suppliers/[supplierId].",
+  );
+}
+
+function getRestrictedCategoriesWriteResponse() {
+  return getRestrictedResourceResponse(
+    "As categorias devem ser alteradas apenas pelas rotas dedicadas /api/erp/categories e /api/erp/categories/[categoryId].",
+  );
+}
+
 export async function GET(_: Request, context: RouteContext) {
   const session = await readServerSession();
 
@@ -171,6 +220,34 @@ export async function PUT(request: Request, context: RouteContext) {
 
   if (resource === PENDING_RESOURCE_ID) {
     return getRestrictedPendingWriteResponse();
+  }
+
+  if (resource === NOTIFICATIONS_RESOURCE_ID) {
+    return getRestrictedNotificationsWriteResponse();
+  }
+
+  if (resource === PLANNING_RESOURCE_ID) {
+    return getRestrictedPlanningWriteResponse();
+  }
+
+  if (resource === CALENDAR_RESOURCE_ID) {
+    return getRestrictedCalendarWriteResponse();
+  }
+
+  if (resource === REPORTS_RESOURCE_ID) {
+    return getRestrictedReportsWriteResponse();
+  }
+
+  if (resource === DISTRIBUTORS_RESOURCE_ID) {
+    return getRestrictedDistributorsWriteResponse();
+  }
+
+  if (resource === SUPPLIERS_RESOURCE_ID) {
+    return getRestrictedSuppliersWriteResponse();
+  }
+
+  if (resource === CATEGORIES_RESOURCE_ID) {
+    return getRestrictedCategoriesWriteResponse();
   }
 
   const session = await readServerSession();
@@ -313,6 +390,34 @@ async function handleUnsupportedWriteMethod(context: RouteContext) {
 
   if (resource === PENDING_RESOURCE_ID) {
     return getRestrictedPendingWriteResponse();
+  }
+
+  if (resource === NOTIFICATIONS_RESOURCE_ID) {
+    return getRestrictedNotificationsWriteResponse();
+  }
+
+  if (resource === PLANNING_RESOURCE_ID) {
+    return getRestrictedPlanningWriteResponse();
+  }
+
+  if (resource === CALENDAR_RESOURCE_ID) {
+    return getRestrictedCalendarWriteResponse();
+  }
+
+  if (resource === REPORTS_RESOURCE_ID) {
+    return getRestrictedReportsWriteResponse();
+  }
+
+  if (resource === DISTRIBUTORS_RESOURCE_ID) {
+    return getRestrictedDistributorsWriteResponse();
+  }
+
+  if (resource === SUPPLIERS_RESOURCE_ID) {
+    return getRestrictedSuppliersWriteResponse();
+  }
+
+  if (resource === CATEGORIES_RESOURCE_ID) {
+    return getRestrictedCategoriesWriteResponse();
   }
 
   return new NextResponse(null, {

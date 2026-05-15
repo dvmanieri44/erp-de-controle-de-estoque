@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  assertCanCancelErpResource,
   ErpAccessDeniedError,
   assertCanDeleteErpResource,
   assertCanReadErpResource,
@@ -198,7 +199,7 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     const mode = parseDeleteMode(request, body);
     if (mode === "cancel") {
-      assertCanUpdateErpResource(session, MOVEMENTS_RESOURCE_ID);
+      assertCanCancelErpResource(session, MOVEMENTS_RESOURCE_ID);
     } else {
       assertCanDeleteErpResource(session, MOVEMENTS_RESOURCE_ID);
     }

@@ -13,10 +13,11 @@ import {
   SummaryCard,
   TextInput,
 } from "@/components/dashboard/operations/ui";
-import { useOperationsCollection } from "@/components/dashboard/operations/useOperationsCollection";
+import { useErpResourceCollection } from "@/components/dashboard/operations/useErpResourceCollection";
+import { confirmAction } from "@/lib/client-feedback";
 import type { DashboardSection } from "@/lib/dashboard-sections";
 import {
-  QUALITY_EVENTS,
+  QUALITY_EVENT_STATUS_OPTIONS,
   type QualityEventItem,
 } from "@/lib/operations-data";
 import {
@@ -60,7 +61,10 @@ function toneByLabel(label: string) {
 export function QualityEventsModule({ section }: { section: DashboardSection }) {
   const { canDelete } = useErpPermissions();
   const canDeleteQualityEvents = canDelete("operations.quality-events");
-  const [events, setEvents] = useOperationsCollection(loadQualityEvents);
+  const [events, setEvents] = useErpResourceCollection(
+    "operations.quality-events",
+    loadQualityEvents,
+  );
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<VersionedQualityEventItem | null>(null);
   const [error, setError] = useState("");
@@ -70,10 +74,10 @@ export function QualityEventsModule({ section }: { section: DashboardSection }) 
     lot: "",
     area: "",
     owner: "",
-    status: QUALITY_EVENTS[0]?.status ?? ("Em análise" as QualityEventItem["status"]),
+    status: QUALITY_EVENT_STATUS_OPTIONS[0] as QualityEventItem["status"],
   });
   const statusOptions = useMemo(
-    () => Array.from(new Set(QUALITY_EVENTS.map((item) => item.status))) as QualityEventItem["status"][],
+    () => [...QUALITY_EVENT_STATUS_OPTIONS] as QualityEventItem["status"][],
     [],
   );
 
@@ -83,7 +87,7 @@ export function QualityEventsModule({ section }: { section: DashboardSection }) 
       lot: "",
       area: "",
       owner: "",
-      status: QUALITY_EVENTS[0]?.status ?? statusOptions[0],
+      status: statusOptions[0] as QualityEventItem["status"],
     });
     setEditingEvent(null);
     setError("");
@@ -129,7 +133,7 @@ export function QualityEventsModule({ section }: { section: DashboardSection }) 
       return;
     }
 
-    if (!window.confirm(`Excluir o evento de qualidade "${item.title}"?`)) {
+    if (!confirmAction(`Excluir o evento de qualidade "${item.title}"?`)) {
       return;
     }
 
@@ -250,7 +254,7 @@ export function QualityEventsModule({ section }: { section: DashboardSection }) 
       {isFormOpen ? (
         <InlineFormPanel
           title={editingEvent ? "Editar evento de qualidade" : "Novo evento de qualidade"}
-          description="Registre liberacoes, reanalises e desvios com acompanhamento local."
+          description="Registre liberações, reanálises e desvios com acompanhamento local."
           error={error || qualityEventMutation.error}
           submitLabel={editingEvent ? "Salvar alteracoes" : "Salvar evento"}
           onSubmit={handleSaveEvent}
@@ -258,7 +262,7 @@ export function QualityEventsModule({ section }: { section: DashboardSection }) 
         >
           <div className="grid gap-4 lg:grid-cols-2">
             <FormField label="Titulo">
-              <TextInput value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Ex.: Reanalise de granulometria" />
+              <TextInput value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Ex.: Reanálise de granulometria" />
             </FormField>
             <FormField label="Lote">
               <TextInput value={form.lot} onChange={(event) => setForm((current) => ({ ...current, lot: event.target.value }))} placeholder="Ex.: PFF310326" />
@@ -266,7 +270,7 @@ export function QualityEventsModule({ section }: { section: DashboardSection }) 
             <FormField label="Area">
               <TextInput value={form.area} onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))} placeholder="Ex.: Quality Hold" />
             </FormField>
-            <FormField label="Responsavel">
+            <FormField label="Responsável">
               <TextInput value={form.owner} onChange={(event) => setForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ex.: Luciana Prado" />
             </FormField>
             <FormField label="Status">
@@ -297,7 +301,7 @@ export function QualityEventsModule({ section }: { section: DashboardSection }) 
                     <StatusPill label={event.status} tone={toneByLabel(event.status)} />
                   </div>
                   <p className="mt-1 text-sm text-[var(--muted-foreground)]">Lote {event.lot} · {event.area}</p>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">Responsavel: {event.owner}</p>
+                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">Responsável: {event.owner}</p>
                 </div>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => handleEditEvent(event)} className="rounded-xl border border-[var(--panel-border)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel)]">Editar</button>
