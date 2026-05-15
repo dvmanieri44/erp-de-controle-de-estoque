@@ -27,8 +27,8 @@ type ScreenMode = "login" | "forgot" | "reset";
 export function LoginScreen({ nextPath, resetToken }: LoginScreenProps) {
   const router = useRouter();
   const [mode, setMode] = useState<ScreenMode>(resetToken ? "reset" : "login");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("admin123");
+  const [password, setPassword] = useState("admin123");
   const [forgotIdentifier, setForgotIdentifier] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
@@ -63,7 +63,7 @@ export function LoginScreen({ nextPath, resetToken }: LoginScreenProps) {
   const subtitle = useMemo(() => {
     if (mode === "forgot") return "Solicite um link seguro para redefinir sua senha";
     if (mode === "reset") return "Defina uma nova senha para voltar ao sistema";
-    return "Faca login para continuar";
+    return "Acesse com admin123 / admin123";
   }, [mode]);
 
   function goToLoginMode() {
@@ -227,7 +227,7 @@ export function LoginScreen({ nextPath, resetToken }: LoginScreenProps) {
                 type="text"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="Digite seu usuario ou e-mail"
+                placeholder="admin123"
                 className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-600"
               />
             </label>
@@ -238,7 +238,7 @@ export function LoginScreen({ nextPath, resetToken }: LoginScreenProps) {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Digite sua senha"
+                placeholder="admin123"
                 className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-600"
               />
             </label>
@@ -253,16 +253,7 @@ export function LoginScreen({ nextPath, resetToken }: LoginScreenProps) {
               {isSubmitting ? "Entrando..." : "Entrar"}
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setMode("forgot");
-                setLoginError("");
-              }}
-              className="w-full text-sm font-medium text-blue-700 transition hover:opacity-80"
-            >
-              Esqueci minha senha
-            </button>
+            <p className="text-center text-xs text-slate-500">Usuario: admin123 | Senha: admin123</p>
           </form>
         ) : null}
 
